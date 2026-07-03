@@ -1,0 +1,28 @@
+# Gate esp_matter's component-level PUBLIC compile options on
+# COMPILE_LANGUAGE:C,CXX so the Embedded Swift driver (which sees these flags
+# via its Clang front-end) doesn't reject `-Wno-error=...` and `-std=gnu++17`.
+#
+# Companion to the `json` shim in SwiftMatter/shims/json/ which satisfies
+# esp_matter's `REQUIRES json` after IDF 6.0 removed the built-in `json`
+# component.  The shim handles the requirements-graph side; this patch
+# handles the compile-flag side.
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -497,8 +497,15 @@
+ target_link_options(${COMPONENT_LIB} PRIVATE -Wl,-O2 -Wl,--gc-sections -Os -Werror -Wl,--fatal-warnings -fdiagnostics-color)
+
+ # compile options from esp-matter/components/
+-target_compile_options(${COMPONENT_LIB} PUBLIC "-Wno-error=uninitialized;-Wno-error=maybe-uninitialized;-Wno-missing-field-initializers")
+-target_compile_options(${COMPONENT_LIB} PUBLIC "-Wno-error=array-bounds;-Wno-write-strings")
++target_compile_options(${COMPONENT_LIB} PUBLIC
++    "$<$<COMPILE_LANGUAGE:C,CXX>:-Wno-error=uninitialized;-Wno-error=maybe-uninitialized;-Wno-missing-field-initializers>"
++)
++target_compile_options(${COMPONENT_LIB} PUBLIC
++    "$<$<COMPILE_LANGUAGE:C,CXX>:-Wno-error=array-bounds;-Wno-write-strings>"
++)
++target_compile_options(${COMPONENT_LIB} PUBLIC
++    "$<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17>"
++)
+ target_compile_options(${COMPONENT_LIB} PUBLIC "-DCHIP_HAVE_CONFIG_H")
+
+ # TODO: remove this when building connectedhomeip/src/controller/CHIPDeviceController.cpp with no format error

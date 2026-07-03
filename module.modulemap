@@ -1,0 +1,4 @@
+module ESP_Matter [system] {
+    umbrella header "src/MatterDevice/matter.h"
+    export *
+}

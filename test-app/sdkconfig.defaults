@@ -1,0 +1,50 @@
+# Matter baseline shared by all chip targets.
+# Adapted from esp-matter release/v1.5 examples/light/sdkconfig.defaults
+# and sdkconfig.defaults.c6_wifi_thread / sdkconfig.defaults.esp32h2.
+
+# 4 MB flash with dual OTA slots
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# BLE (NimBLE) — required for Matter commissioning over BLE
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLE_CONN_REATTEMPT=n
+
+# Custom partition table (NVS + dual OTA, see partitions.csv)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0xC000
+
+# No Wi-Fi SoftAP — Matter end-devices don't run one
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+CONFIG_ENABLE_WIFI_AP=n
+
+# Thread manages its own IPv6 SLAAC; disable lwIP autoconfig
+CONFIG_LWIP_IPV6_AUTOCONFIG=n
+
+# lwIP route hooks for Thread interop
+CONFIG_LWIP_HOOK_IP6_ROUTE_DEFAULT=y
+CONFIG_LWIP_HOOK_ND6_GET_GW_DEFAULT=y
+
+# More IPv6 addresses for Thread (per-fabric ULAs + link-local + …)
+CONFIG_LWIP_IPV6_NUM_ADDRESSES=8
+CONFIG_LWIP_MULTICAST_PING=y
+
+# Full lwIP mDNS (esp-matter requires non-minimal)
+CONFIG_USE_MINIMAL_MDNS=n
+
+# HKDF for Matter session crypto
+CONFIG_MBEDTLS_HKDF_C=y
+
+# OpenThread — Matter transport (sole on H2, alongside Wi-Fi on C6)
+CONFIG_OPENTHREAD_ENABLED=y
+CONFIG_OPENTHREAD_SRP_CLIENT=y
+CONFIG_OPENTHREAD_LOG_LEVEL_DYNAMIC=n
+CONFIG_OPENTHREAD_LOG_LEVEL_NOTE=y
+CONFIG_OPENTHREAD_CLI=n
+
+# Matter dynamic endpoints (the test app uses ≤ 4)
+CONFIG_ESP_MATTER_MAX_DYNAMIC_ENDPOINT_COUNT=4
+
+# Enable OTA Requestor (standard for Matter devices)
+CONFIG_ENABLE_OTA_REQUESTOR=y

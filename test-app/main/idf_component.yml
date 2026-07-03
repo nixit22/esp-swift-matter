@@ -1,0 +1,8 @@
+dependencies:
+  idf: ">=5.5,<6"
+  esp-swift-nvs:
+    git: "https://github.com/nixit22/esp-swift-nvs.git"
+  esp-swift-platform:
+    git: "https://github.com/nixit22/esp-swift-platform.git"
+  esp-swift-support:
+    git: "https://github.com/nixit22/esp-swift-support.git"

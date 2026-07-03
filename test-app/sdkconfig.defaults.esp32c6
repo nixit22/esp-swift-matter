@@ -1,0 +1,13 @@
+CONFIG_IDF_TARGET="esp32c6"
+
+# C6 supports both Wi-Fi and Thread — enable Wi-Fi STA alongside Thread
+CONFIG_ENABLE_WIFI_STATION=y
+
+# DNS-over-Thread client (recommended when Thread runs alongside Wi-Fi)
+CONFIG_OPENTHREAD_DNS_CLIENT=y
+
+# Share BLE with the application — not commissioning-only
+CONFIG_USE_BLE_ONLY_FOR_COMMISSIONING=n
+
+# Extended discovery for dual-stack commissioning
+CONFIG_ENABLE_EXTENDED_DISCOVERY=y

@@ -1,0 +1,8 @@
+.DS_Store
+test-app/build/
+test-app/managed_components/
+test-app/sdkconfig
+test-app/sdkconfig.old
+test-app/dependencies.lock
+test-app/.vscode/settings.json
+.claude/settings.local.json

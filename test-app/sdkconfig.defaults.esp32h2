@@ -1,0 +1,4 @@
+CONFIG_IDF_TARGET="esp32h2"
+
+# H2 has no Wi-Fi radio — Thread-only Matter device
+CONFIG_ENABLE_WIFI_STATION=n
