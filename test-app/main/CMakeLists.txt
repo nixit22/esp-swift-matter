@@ -25,7 +25,7 @@ idf_component_register(
         "main.swift"
         "TestMatter.swift"
     INCLUDE_DIRS "."
-    REQUIRES esp-swift-matter esp-swift-nvs esp-swift-platform esp-swift-support
+    REQUIRES esp-swift-matter
 )
 
 swift_configure(
