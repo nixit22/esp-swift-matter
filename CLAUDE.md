@@ -12,6 +12,7 @@ Sources are organized into per-endpoint directories under `src/`; each directory
 |---|---|
 | `src/MatterDevice/` | `MatterDevice.swift` (root node, `Endpoint` nested struct, `run()`); `matter_core.h/cpp` (shared types, attribute helpers, node/stack API); `matter.h` (umbrella header) |
 | `src/FactoryData/` | `MatterFactoryData.swift` — populates the `chip-factory` NVS namespace (vendor/product/hw-version/serial) that esp_matter's device-instance-info provider reads. Pure Swift, no C facade. |
+| `src/RootClusters/TimeSynchronization/` | `TimeSynchronization.swift`; `matter_time_synchronization.h/cpp` (Time Synchronization cluster, 0x0038, on the *root* endpoint — not a new device-type endpoint) |
 | `src/Endpoints/TemperatureSensorEndpoint/` | `TemperatureSensorEndpoint.swift`; `matter_temperature_sensor.h/cpp` (device type 0x0302) |
 | `src/Endpoints/HumiditySensorEndpoint/` | `HumiditySensorEndpoint.swift`; `matter_humidity_sensor.h/cpp` (device type 0x0307) |
 | `src/Endpoints/PressureSensorEndpoint/` | `PressureSensorEndpoint.swift`; `matter_pressure_sensor.h/cpp` (device type 0x0305) |
@@ -35,6 +36,7 @@ let pres = PressureSensorEndpoint(matter, min: 300, max: 1100)
 let valve = WaterValveEndpoint(matter,
     onOpen:  { _ in /* open hardware */  valve.setCurrentState(.open)   },
     onClose: { _ in /* close hardware */ valve.setCurrentState(.closed) })
+matter.enableTimeSynchronization()
 matter.run { event in
     if event == .commissioningComplete { /* commissioned! */ }
 }
@@ -72,6 +74,89 @@ Pass `initialPosition` at init if boot position is known; otherwise call `setCur
 Battery feature). `set(percent:voltageMv:)` writes BatPercentRemaining (scaled ×2 into Matter's 0–200
 half-percent range) and BatVoltage (mV); pass `nil` for either to set the Matter null sentinel.
 `set(_:)` is non-mutating, so the endpoint can be stored as `let`.
+
+`MatterDevice.enableTimeSynchronization()` adds the Time Synchronization cluster (0x0038) to the
+*root* endpoint (not a new device-type endpoint — Matter defines this cluster as living on EP0).
+Call it after `MatterDevice()` init and before `run()`. It's a fire-and-forget call, not a
+struct — the whole sync flow happens inside CHIP with no Swift-side state or attribute writes.
+Passes a custom `SwiftTimeSyncDelegate` (in `matter_time_synchronization.cpp`, subclassing
+connectedhomeip's `DefaultTimeSyncDelegate`) rather than a null delegate — see "NTP fallback
+delegate" below. It inherits the Trusted-Time-Source client feature, compiled in by default
+(`TIME_SYNC_ENABLE_TSC_FEATURE` is only forced off when `CONFIG_DISABLE_READ_CLIENT` is set). Once
+commissioned, if the controller (or another fabric node) registers itself as a Trusted Time
+Source, the device reads UTC time over a CASE session and calls `SetClock_RealTime()`, which
+unconditionally does `settimeofday()` regardless of sdkconfig — no SNTP client needed for that
+path. Set `CONFIG_ENABLE_SNTP_TIME_SYNC=y` in the host project's sdkconfig anyway: it doesn't gate
+the trusted-time-source sync itself, but gates `GetClock_RealTime()` (used for cert-validity checks
+and by `DefaultTimeSyncDelegate::UpdateTimeFromPlatformSource`), which otherwise always reports
+`CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE` even after the clock has been set once.
+
+`enableTimeSynchronization()` also calls `esp_matter::cluster::time_synchronization::feature::time_zone::add()`
+to advertise the cluster's TimeZone (`TZ`) feature bit. This is the Matter mechanism by which a
+UI-less device learns local time: with the bit set, `AutoCommissioner` runs the
+`kConfigureTimeZone` stage during commissioning and the controller (Apple Home, Google Home, Home
+Assistant, ...) writes its own known local timezone — derived from phone locale or hub server
+tz, no GPS or UI needed on the device — into the cluster's `TimeZone`/`DSTOffset` attributes.
+Without this feature bit (esp_matter's own `time_synchronization::create()` hardcodes
+`FeatureMap=0`), commissioners skip that stage entirely and the device only ever has UTC.
+`MatterDevice.localUnixTime() -> Int64?` reads back the result: it calls
+`TimeSynchronizationServer::Instance().GetLocalTime()` (connectedhomeip's own UTC+TimeZone+DSTOffset
+math, in CHIP-epoch microseconds since 2000-01-01) and converts to Unix epoch seconds via
+`chip::ChipEpochToUnixEpochMicros()`. Returns `nil` until both the clock is synced *and* a
+controller has written a timezone — callers should keep a fallback path (e.g. a hardcoded TZ) for
+use before that happens. The returned value is UTC-plus-offset baked into a fake epoch, not a
+real Unix timestamp — format it with `gmtime_r` (not `localtime_r`), since no actual `TZ` env var
+is involved.
+
+`MatterDevice.retryTimeSync()` re-invokes the Time Synchronization cluster's time-fetch attempt.
+connectedhomeip only calls its internal `AttemptToGetTime()` once, on boot (plus once more if a
+controller resends `SetTrustedTimeSource`) — no built-in periodic retry. If that single attempt's
+CASE session to the trusted time source times out (e.g. Thread mesh not yet settled right after a
+reboot), the device stays unsynced until the next reboot. `retryTimeSync()` re-enters the same
+attempt chain via `SetTrustedTimeSource(GetTrustedTimeSource())` (the real `AttemptToGetTime()` is
+private). Must be called under `esp_matter::lock::ScopedChipStackLock` when invoked from the app's
+own task rather than the CHIP event-loop thread — `matter_time_synchronization.cpp` does this
+internally. Callers should poll it periodically (e.g. a status-logging loop) while `localUnixTime()`
+stays `nil`. See `matter-time-test/TIME-SYNC.md` for the full investigation that led to this fix.
+
+**NTP fallback delegate and `setDefaultNTP`** — connectedhomeip's `DefaultTimeSyncDelegate` leaves
+`UpdateTimeUsingNTPFallback` unimplemented (`return CHIP_ERROR_NOT_IMPLEMENTED`, unchanged as of
+this writing even on upstream `main`), so the NTP branch of `AttemptToGetTime()` was previously a
+dead stub. Two independent fixes were needed, both in `matter_time_synchronization.cpp`:
+
+1. `SwiftTimeSyncDelegate : public DefaultTimeSyncDelegate` overrides only
+   `UpdateTimeUsingNTPFallback` (everything else — `IsNTPAddressValid`, `IsNTPAddressDomain`,
+   `UpdateTimeFromPlatformSource` — is inherited as-is). The override spawns a dedicated FreeRTOS
+   task to run ESP-IDF's `esp_netif_sntp` client (`esp_netif_sntp_init` +
+   `esp_netif_sntp_sync_wait`, blocking) against the delegate-supplied NTP hostname —
+   deliberately off the CHIP event-loop thread, since `UpdateTimeUsingNTPFallback` runs on it (or
+   under `ScopedChipStackLock` via `retryTimeSync()`), and a blocking SNTP call there would stall
+   the whole Matter stack. The result is marshaled back via
+   `chip::DeviceLayer::PlatformMgr().ScheduleWork()` so the completion callback fires on the CHIP
+   thread as required. `esp_netif_sntp`'s own lwIP client calls `settimeofday()` internally on
+   sync, so the delegate does not call `SetClock_RealTime()` itself — doing so would just be a
+   redundant second `settimeofday()`. A `std::atomic<bool>` in-flight guard makes a re-entrant
+   call (e.g. from `retryTimeSync()`'s 30s loop, while a prior query is still waiting on the SNTP
+   timeout) return `CHIP_ERROR_BUSY` instead of racing a second task. `esp_netif_sntp` is a
+   singleton — the task calls `esp_netif_sntp_deinit()` before finishing either way, since a
+   second `esp_netif_sntp_init()` without a prior deinit errors.
+2. `esp_matter_enable_time_synchronization()` now passes a non-null `config.delegate` pointing at
+   a static `SwiftTimeSyncDelegate` instance — `esp_matter_cluster.cpp`'s
+   `time_synchronization::create()` already wires any non-null `config->delegate` via
+   `set_delegate_and_init_callback(cluster, TimeSynchronizationDelegateInitCB, config->delegate)`
+   → `TimeSynchronization::SetDefaultDelegate()`, so no esp_matter patch/fork was needed.
+3. **This alone is not sufficient.** connectedhomeip's `AttemptToGetFallbackNTPTimeFromDelegate()`
+   calls `TimeSynchronizationServer::GetDefaultNtp()` *first* and bails out to
+   `emitTimeFailureEvent` *before ever calling the delegate* if no `DefaultNTP` value has been
+   stored — and no controller observed in practice (Apple Home, Home Assistant — see
+   `matter-time-test/TIME-SYNC.md` §5/§6) ever sends the `SetDefaultNTP` command. So
+   `MatterDevice.setDefaultNTP(_ host: String)` (wrapping the new C function
+   `esp_matter_time_synchronization_set_default_ntp`) seeds a local `DefaultNTP` value directly via
+   `TimeSynchronizationServer::Instance().SetDefaultNTP()` — but only if `GetDefaultNtp()` shows
+   nothing is stored yet, so it doesn't fight a value a controller already wrote. Call it after
+   `enableTimeSynchronization()` and before `run()`. Host must be IPv6-reachable (e.g.
+   `"time.google.com"`, `"2.pool.ntp.org"`) since Thread is an IPv6-only transport and many
+   `pool.ntp.org` entries are IPv4-only.
 
 ## Public API — factory data
 
@@ -111,7 +196,7 @@ to `"PREFIX-00000000"` on failure (a factory-data write must never block boot). 
 byte counts, different failure semantics, different lifetimes (cosmetic label recomputed
 every boot vs. serial written once to NVS) — not worth forcing into one abstraction.
 
-**C façade, not C++ interop** — esp_matter is C++, but Swift only sees `extern "C"` signatures in `matter.h` decorated with `__attribute__((swift_name(...)))`. The bridging into `esp_matter::node::create`, `esp_matter::endpoint::temperature_sensor::create`, etc. happens in `matter.cpp`. This avoids dragging C++ headers (and `-cxx-interoperability-mode`) into the Swift build.
+**C façade, not C++ interop** — esp_matter is C++, but Swift only sees `extern "C"` signatures in `matter.h` decorated with `SWIFT_NAME(...)` (from `esp-swift-support`'s `swift_support.h`, not the raw `__attribute__((swift_name(...)))` form). The bridging into `esp_matter::node::create`, `esp_matter::endpoint::temperature_sensor::create`, etc. happens in `matter.cpp`. This avoids dragging C++ headers (and `-cxx-interoperability-mode`) into the Swift build.
 
 **Endpoint registry via `privData`** — C attribute callbacks are `@convention(c)` and cannot capture Swift context. `MatterDevice.init` passes `Unmanaged.passRetained(self).toOpaque()` as `privData` to `esp_matter_create_node`; `matter_core.cpp` forwards this through `callback_context.user_priv_data` to every attribute callback. Callbacks recover the `MatterDevice` instance with `Unmanaged<MatterDevice>.fromOpaque(priv_data).takeUnretainedValue()` and look up the endpoint by ID in `matter.endpoints`. No global/static state. The `passRetained` is intentional — the Matter node lives for the process lifetime. Sensor constructors receive the `MatterDevice` instance explicitly and call `matter.register(endpoint:)` directly. `MatterDevice.Endpoint` is a value type (struct); the registry owns the authoritative copy, sensor structs hold a second copy used only for `update()` (which only needs the endpoint ID). `esp_matter_endpoint_set_priv_data` is kept in the C façade but unused by Swift — the per-endpoint `priv_data` path in `matter_core.cpp` is a dead fallback (always null, falls through to `user_priv_data`).
 

@@ -25,6 +25,7 @@
 #pragma once
 
 #include "matter_core.h"
+#include <swift_support.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,7 +45,7 @@ extern const uint32_t esp_matter_mode_select_current_mode_attribute_id;
  *  Call esp_matter_mode_select_add_mode() after this to register mode options.
  *  Must be called before esp_matter_start(). Aborts on failure.
  */
-__attribute__((swift_name("esp_matter_endpoint_mode_select_create(description:initialMode:privData:)")))
+SWIFT_NAME("esp_matter_endpoint_mode_select_create(description:initialMode:privData:)")
 esp_matter_endpoint_t *
 esp_matter_endpoint_mode_select_create(
     const char *description,
@@ -60,7 +61,7 @@ esp_matter_endpoint_mode_select_create(
  *  Call once per mode after esp_matter_endpoint_mode_select_create()
  *  and before esp_matter_start().
  */
-__attribute__((swift_name("esp_matter_mode_select_add_mode(endpoint:mode:label:)")))
+SWIFT_NAME("esp_matter_mode_select_add_mode(endpoint:mode:label:)")
 void
 esp_matter_mode_select_add_mode(
     esp_matter_endpoint_t *endpoint,
