@@ -35,7 +35,9 @@ and `Matter.run()` is never exercised in the test-app.
 ## 3. Device types — partially done
 
 `TemperatureSensor`, `HumiditySensor`, and `PressureSensor` endpoints exist
-(covering both BME280 outputs and AHT20 humidity). Remaining:
+(covering both BME280 outputs and AHT20 humidity). Time Synchronization
+(root-endpoint cluster 0x0038, `MatterDevice.enableTimeSynchronization()`) is
+also done — exercised end-to-end by the `matter-time-test` project. Remaining:
 
 - Common types: on/off light, contact/occupancy sensor, etc.
 - A generic `Endpoint` builder so new device types don't each need a bespoke C

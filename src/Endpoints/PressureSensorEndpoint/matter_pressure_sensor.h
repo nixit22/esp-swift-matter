@@ -25,6 +25,7 @@
 #pragma once
 
 #include "matter_core.h"
+#include <swift_support.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +37,7 @@ extern const uint32_t esp_matter_pressure_measurement_cluster_id;
 extern const uint32_t esp_matter_pressure_measurement_measured_value_attribute_id;
 
 /** C wrapper for esp_matter::endpoint::pressure_sensor::create */
-__attribute__((swift_name("esp_matter_endpoint_pressure_sensor_create(minMeasuredValue:maxMeasuredValue:privData:)")))
+SWIFT_NAME("esp_matter_endpoint_pressure_sensor_create(minMeasuredValue:maxMeasuredValue:privData:)")
 esp_matter_endpoint_t *
 esp_matter_endpoint_pressure_sensor_create(
     int16_t min_measured_value, int16_t max_measured_value, void *priv_data);

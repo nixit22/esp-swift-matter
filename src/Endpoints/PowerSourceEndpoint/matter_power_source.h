@@ -25,6 +25,7 @@
 #pragma once
 
 #include "matter_core.h"
+#include <swift_support.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,7 +40,7 @@ extern const uint32_t esp_matter_power_source_bat_voltage_attribute_id;
 
 /** C wrapper for esp_matter::endpoint::power_source::create with Battery feature enabled.
  *  Adds BatPercentRemaining and BatVoltage optional attributes to the cluster. */
-__attribute__((swift_name("esp_matter_endpoint_power_source_create(order:privData:)")))
+SWIFT_NAME("esp_matter_endpoint_power_source_create(order:privData:)")
 esp_matter_endpoint_t *
 esp_matter_endpoint_power_source_create(uint8_t order, void *priv_data);
 

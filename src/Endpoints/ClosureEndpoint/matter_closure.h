@@ -26,6 +26,7 @@
 #pragma once
 
 #include "matter_core.h"
+#include <swift_support.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,7 +111,7 @@ typedef bool (*closure_is_ready_cb_t)(uint16_t endpoint_id, void *priv_data);
  *
  *  Must be called before esp_matter_start(). Aborts on failure.
  */
-__attribute__((swift_name("esp_matter_endpoint_closure_create(featureFlags:initialPosition:moveToCallback:stopCalibrateCallback:isReadyCallback:privData:)")))
+SWIFT_NAME("esp_matter_endpoint_closure_create(featureFlags:initialPosition:moveToCallback:stopCalibrateCallback:isReadyCallback:privData:)")
 esp_matter_endpoint_t *
 esp_matter_endpoint_closure_create(
     uint32_t              feature_flags,
@@ -125,7 +126,7 @@ esp_matter_endpoint_closure_create(
  *  main_state: one of ESP_MATTER_CLOSURE_STATE_*.
  *  Acquires the CHIP stack lock internally. Do NOT hold the lock when calling.
  */
-__attribute__((swift_name("esp_matter_closure_set_main_state(endpointId:mainState:)")))
+SWIFT_NAME("esp_matter_closure_set_main_state(endpointId:mainState:)")
 esp_err_t esp_matter_closure_set_main_state(uint16_t endpoint_id, uint8_t main_state);
 
 /** Update ClosureControl OverallCurrentState.position.
@@ -133,7 +134,7 @@ esp_err_t esp_matter_closure_set_main_state(uint16_t endpoint_id, uint8_t main_s
  *  position: one of ESP_MATTER_CLOSURE_CURRENT_*.
  *  Acquires the CHIP stack lock internally. Do NOT hold the lock when calling.
  */
-__attribute__((swift_name("esp_matter_closure_set_current_position(endpointId:hasPosition:position:)")))
+SWIFT_NAME("esp_matter_closure_set_current_position(endpointId:hasPosition:position:)")
 esp_err_t esp_matter_closure_set_current_position(
     uint16_t endpoint_id, bool has_position, uint8_t position);
 

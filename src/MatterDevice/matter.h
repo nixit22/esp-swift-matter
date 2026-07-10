@@ -26,6 +26,7 @@
 #pragma once
 
 #include "matter_core.h"
+#include "matter_time_synchronization.h"
 #include "matter_temperature_sensor.h"
 #include "matter_humidity_sensor.h"
 #include "matter_pressure_sensor.h"

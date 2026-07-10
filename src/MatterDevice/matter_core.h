@@ -34,6 +34,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <esp_err.h>
+#include <swift_support.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -178,40 +179,40 @@ typedef void (*matter_command_cb_t)(uint16_t endpoint_id, uint8_t command_id, vo
 /** Build a nullable 16-bit signed attribute value. When isNull is true the
  *  value field is ignored and the attribute is set to the Matter null sentinel.
  */
-__attribute__((swift_name("esp_matter_attr_nullable_int16(_:isNull:)")))
+SWIFT_NAME("esp_matter_attr_nullable_int16(_:isNull:)")
 _esp_matter_attr_val_t esp_matter_attr_nullable_int16(int16_t value, bool isNull);
 
 /** Build a nullable 16-bit unsigned attribute value. When isNull is true the
  *  value field is ignored and the attribute is set to the Matter null sentinel.
  */
-__attribute__((swift_name("esp_matter_attr_nullable_uint16(_:isNull:)")))
+SWIFT_NAME("esp_matter_attr_nullable_uint16(_:isNull:)")
 _esp_matter_attr_val_t esp_matter_attr_nullable_uint16(uint16_t value, bool isNull);
 
 /** Build a nullable 8-bit unsigned attribute value. When isNull is true the
  *  value field is ignored and the attribute is set to the Matter null sentinel.
  */
-__attribute__((swift_name("esp_matter_attr_nullable_uint8(_:isNull:)")))
+SWIFT_NAME("esp_matter_attr_nullable_uint8(_:isNull:)")
 _esp_matter_attr_val_t esp_matter_attr_nullable_uint8(uint8_t value, bool isNull);
 
 /** Build a nullable 32-bit unsigned attribute value. When isNull is true the
  *  value field is ignored and the attribute is set to the Matter null sentinel.
  */
-__attribute__((swift_name("esp_matter_attr_nullable_uint32(_:isNull:)")))
+SWIFT_NAME("esp_matter_attr_nullable_uint32(_:isNull:)")
 _esp_matter_attr_val_t esp_matter_attr_nullable_uint32(uint32_t value, bool isNull);
 
 /** Build a nullable 8-bit enum attribute value (NULLABLE_ENUM8 tag).
  *  Use this for enum8 attributes such as ValveConfigurationAndControl::CurrentState.
  *  When isNull is true the value field is ignored.
  */
-__attribute__((swift_name("esp_matter_attr_nullable_enum8(_:isNull:)")))
+SWIFT_NAME("esp_matter_attr_nullable_enum8(_:isNull:)")
 _esp_matter_attr_val_t esp_matter_attr_nullable_enum8(uint8_t value, bool isNull);
 
 /** Build a non-nullable uint8 attribute value (UINT8 type tag). */
-__attribute__((swift_name("esp_matter_attr_val_uint8(_:)")))
+SWIFT_NAME("esp_matter_attr_val_uint8(_:)")
 _esp_matter_attr_val_t esp_matter_attr_val_uint8(uint8_t value);
 
 /** Extract uint8 from a non-nullable uint8 attribute value. */
-__attribute__((swift_name("esp_matter_attr_val_get_uint8(_:)")))
+SWIFT_NAME("esp_matter_attr_val_get_uint8(_:)")
 uint8_t esp_matter_attr_val_get_uint8(_esp_matter_attr_val_t val);
 
 esp_err_t set_default_openthread_platform_config(void);
@@ -221,15 +222,15 @@ esp_err_t set_default_openthread_platform_config(void);
  *  privData is stored as the fallback per-node private pointer; individual
  *  endpoints override it via esp_matter_endpoint_set_priv_data().
  */
-__attribute__((swift_name("esp_matter_create_node(nodeLabel:willUpdate:didUpdate:privData:)")))
+SWIFT_NAME("esp_matter_create_node(nodeLabel:willUpdate:didUpdate:privData:)")
 esp_matter_endpoint_t *
 esp_matter_create_node(char *node_label, callback_t will_update, callback_t did_update, void *priv_data);
 
-__attribute__((swift_name("esp_matter_endpoint_get_id( _:)")))
+SWIFT_NAME("esp_matter_endpoint_get_id( _:)")
 uint16_t
 esp_matter_endpoint_get_id(esp_matter_endpoint_t *endpoint);
 
-__attribute__((swift_name("esp_matter_endpoint_set_priv_data(endpointId:privData:)")))
+SWIFT_NAME("esp_matter_endpoint_set_priv_data(endpointId:privData:)")
 esp_err_t
 esp_matter_endpoint_set_priv_data(uint16_t endpoint_id, void *priv_data);
 
@@ -249,7 +250,7 @@ typedef void (*esp_matter_event_cb_t)(uint8_t event, void *arg);
 /** Start the Matter stack. callback may be NULL.
  *  Blocks until CHIP init completes. Call after all endpoints have been created.
  */
-__attribute__((swift_name("esp_matter_start(callback:callbackArg:)")))
+SWIFT_NAME("esp_matter_start(callback:callbackArg:)")
 esp_err_t esp_matter_start(esp_matter_event_cb_t callback, void *callbackArg);
 
 /** Print commissioning QR code and manual pairing code via ChipLogProgress.
@@ -262,7 +263,7 @@ void esp_matter_print_onboarding_codes(void);
  */
 bool esp_matter_is_commissioned(void);
 
-__attribute__((swift_name("esp_matter_attribute_update(endpointId:clusterId:attributeId:value:)")))
+SWIFT_NAME("esp_matter_attribute_update(endpointId:clusterId:attributeId:value:)")
 esp_err_t esp_matter_attribute_update(uint16_t endpoint_id, uint32_t cluster_id, uint32_t attribute_id,
                                      _esp_matter_attr_val_t *val);
 

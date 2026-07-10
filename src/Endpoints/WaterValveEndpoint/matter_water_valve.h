@@ -26,6 +26,7 @@
 #pragma once
 
 #include "matter_core.h"
+#include <swift_support.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,7 +45,7 @@ extern const uint32_t esp_matter_valve_configuration_and_control_current_state_a
  *  Creates the endpoint and registers a C++ delegate trampoline that calls
  *  command_callback with ESP_MATTER_VALVE_CMD_OPEN or ESP_MATTER_VALVE_CMD_CLOSE.
  */
-__attribute__((swift_name("esp_matter_endpoint_water_valve_create(commandCallback:privData:)")))
+SWIFT_NAME("esp_matter_endpoint_water_valve_create(commandCallback:privData:)")
 esp_matter_endpoint_t *
 esp_matter_endpoint_water_valve_create(matter_command_cb_t command_callback, void *priv_data);
 

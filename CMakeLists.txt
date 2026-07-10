@@ -23,6 +23,7 @@
 idf_component_register(
     SRCS
         src/MatterDevice/matter_core.cpp
+        src/RootClusters/TimeSynchronization/matter_time_synchronization.cpp
         src/Endpoints/TemperatureSensorEndpoint/matter_temperature_sensor.cpp
         src/Endpoints/HumiditySensorEndpoint/matter_humidity_sensor.cpp
         src/Endpoints/PressureSensorEndpoint/matter_pressure_sensor.cpp
@@ -32,6 +33,7 @@ idf_component_register(
         src/Endpoints/PowerSourceEndpoint/matter_power_source.cpp
         src/MatterDevice/MatterDevice.swift
         src/FactoryData/MatterFactoryData.swift
+        src/RootClusters/TimeSynchronization/TimeSynchronization.swift
         src/Endpoints/TemperatureSensorEndpoint/TemperatureSensorEndpoint.swift
         src/Endpoints/HumiditySensorEndpoint/HumiditySensorEndpoint.swift
         src/Endpoints/PressureSensorEndpoint/PressureSensorEndpoint.swift
@@ -41,6 +43,7 @@ idf_component_register(
         src/Endpoints/PowerSourceEndpoint/PowerSourceEndpoint.swift
     PRIV_INCLUDE_DIRS
         src/MatterDevice
+        src/RootClusters/TimeSynchronization
         src/Endpoints/TemperatureSensorEndpoint
         src/Endpoints/HumiditySensorEndpoint
         src/Endpoints/PressureSensorEndpoint
