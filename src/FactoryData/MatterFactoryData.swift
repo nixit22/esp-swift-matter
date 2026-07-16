@@ -29,43 +29,37 @@ private let log = Logger(tag: "MatterFactoryData")
 /// The namespace and key names used here are fixed by connectedhomeip
 /// (`ESP32Config.cpp`) and must never change — they are read by the vendored
 /// CHIP stack, not by this library.
+///
+/// Only `serial-num` is provisioned here. `vendor-name`, `product-name`, and
+/// `hw-ver-str` used to be written too, but `GenericDeviceInstanceInfoProvider` — the
+/// active `DeviceInstanceInfoProvider` unless a project opts into
+/// `CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER` — hardcodes `GetVendorName()`,
+/// `GetProductName()`, and `GetHardwareVersionString()` to compile-time
+/// `CHIP_DEVICE_CONFIG_*` macros and never reads NVS for them at all (only
+/// `GetSerialNumber()` and the numeric `GetHardwareVersion()` actually consult this
+/// namespace). Those three writes were dead: e.g. `matter-time-test` saw
+/// `TEST_VENDOR`/`TEST_PRODUCT` in Apple Home regardless of what was written here,
+/// fixed instead via a `CHIP_PROJECT_CONFIG` override header (see
+/// `matter-time-test/chip_project_config.h`).
 public enum MatterFactoryData {
     private static let namespace = "chip-factory"
 
-    /// Ensures `vendor-name`, `product-name`, `hw-ver-str`, and `serial-num` exist in
-    /// the `chip-factory` NVS namespace, writing any that are missing. Never overwrites
-    /// an already-provisioned value — safe to call on every boot.
+    /// Ensures `serial-num` exists in the `chip-factory` NVS namespace, writing it if
+    /// missing. Never overwrites an already-provisioned value — safe to call on every boot.
     ///
     /// Call once at boot, after `nvs_flash_init()` and before `MatterDevice()`/`matter.run()`.
     ///
-    /// - Parameters:
-    ///   - vendorName: Human-readable vendor name (`vendor-name` key).
-    ///   - productName: Human-readable product name (`product-name` key).
-    ///   - hwVersion: Human-readable hardware version string (`hw-ver-str` key).
-    ///   - serialNumber: Serial number to persist under `serial-num`. See
-    ///     ``macSerial(prefix:)`` for a MAC-derived default.
+    /// - Parameter serialNumber: Serial number to persist under `serial-num`. See
+    ///   ``macSerial(prefix:)`` for a MAC-derived default.
     ///
     /// Never throws — a factory-data write failure on an already-provisioned device
     /// must never block boot; failures are logged and skipped.
-    public static func initialize(
-        vendorName: String, productName: String, hwVersion: String,
-        serialNumber: String
-    ) {
+    public static func initialize(serialNumber: String) {
         guard let handle = try? NVS(namespace: namespace) else { return }
 
-        func setIfMissing(_ key: String, _ value: String) -> Bool {
-            (try? handle.setStringIfMissing(key, value)) ?? false
-        }
-
-        var dirty = false
-        dirty = setIfMissing("vendor-name", vendorName) || dirty
-        dirty = setIfMissing("product-name", productName) || dirty
-        dirty = setIfMissing("hw-ver-str", hwVersion) || dirty
-        dirty = setIfMissing("serial-num", serialNumber) || dirty
-
-        if dirty {
+        if (try? handle.setStringIfMissing("serial-num", serialNumber)) ?? false {
             try? handle.commit()
-            log.i("chip-factory initialized (vendor=\(vendorName), product=\(productName), hw=\(hwVersion), serial=\(serialNumber))")
+            log.i("chip-factory initialized (serial=\(serialNumber))")
         }
     }
 

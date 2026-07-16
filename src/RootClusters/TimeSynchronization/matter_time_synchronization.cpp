@@ -33,6 +33,10 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <lwip/netdb.h>
+#include <lwip/inet.h>
+#include <lwip/dns.h>
+
 #include <atomic>
 #include <cstring>
 #include <algorithm>
@@ -84,15 +88,54 @@ private:
     {
         auto *self = static_cast<SwiftTimeSyncDelegate *>(arg);
 
+        // Diagnostic only — disambiguates "DNS never resolves" from "resolved fine, no reply
+        // to the actual NTP packet" before esp_netif_sntp_sync_wait collapses both into
+        // ESP_ERR_TIMEOUT. Also dumps lwIP's configured DNS servers directly: on Thread,
+        // nothing populates these automatically unless RDNSS/NAT64 discovery wired them up —
+        // if all three are unset, that alone explains EAI_FAIL, independent of whether the
+        // Border Router itself has WAN.
+        for (u8_t i = 0; i < DNS_MAX_SERVERS; i++) {
+            const ip_addr_t *server = dns_getserver(i);
+            char ipStr[INET6_ADDRSTRLEN] = {};
+            if (server != nullptr && !ip_addr_isany(server)) {
+                ipaddr_ntoa_r(server, ipStr, sizeof(ipStr));
+                ESP_LOGI(kTag, "lwIP DNS server[%u] = %s", i, ipStr);
+            } else {
+                ESP_LOGI(kTag, "lwIP DNS server[%u] = (unset)", i);
+            }
+        }
+
+        struct addrinfo hints = {};
+        hints.ai_family = AF_UNSPEC;
+        struct addrinfo *res = nullptr;
+        int gaiErr = lwip_getaddrinfo(self->mHost, nullptr, &hints, &res);
+        if (gaiErr == 0 && res != nullptr) {
+            char ipStr[INET6_ADDRSTRLEN] = {};
+            void *addr = (res->ai_family == AF_INET6)
+                ? (void *)&reinterpret_cast<struct sockaddr_in6 *>(res->ai_addr)->sin6_addr
+                : (void *)&reinterpret_cast<struct sockaddr_in *>(res->ai_addr)->sin_addr;
+            inet_ntop(res->ai_family, addr, ipStr, sizeof(ipStr));
+            ESP_LOGI(kTag, "DNS resolved '%s' -> %s", self->mHost, ipStr);
+            lwip_freeaddrinfo(res);
+        } else {
+            ESP_LOGW(kTag, "DNS resolution for '%s' failed: gai_err=%d", self->mHost, gaiErr);
+        }
+
         esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(self->mHost);
         bool success = false;
-        if (esp_netif_sntp_init(&config) == ESP_OK) {
+        esp_err_t initErr = esp_netif_sntp_init(&config);
+        if (initErr == ESP_OK) {
             // esp_netif_sntp's own lwIP client calls settimeofday() internally on sync —
             // no separate SetClock_RealTime() call needed here.
-            success = esp_netif_sntp_sync_wait(kSntpSyncTimeout) == ESP_OK;
+            esp_err_t syncErr = esp_netif_sntp_sync_wait(kSntpSyncTimeout);
+            success = syncErr == ESP_OK;
             esp_netif_sntp_deinit(); // singleton — must deinit before any later init call
+            ESP_LOGI(kTag, "NTP fallback query to '%s' %s (sync_wait=%s)", self->mHost,
+                     success ? "succeeded" : "failed", esp_err_to_name(syncErr));
+        } else {
+            ESP_LOGI(kTag, "NTP fallback query to '%s' failed (init=%s)", self->mHost,
+                     esp_err_to_name(initErr));
         }
-        ESP_LOGI(kTag, "NTP fallback query to '%s' %s", self->mHost, success ? "succeeded" : "failed");
 
         self->mLastResult.store(success);
         chip::DeviceLayer::PlatformMgr().ScheduleWork(&SwiftTimeSyncDelegate::CompleteOnChipThread,

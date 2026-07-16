@@ -11,7 +11,7 @@ Sources are organized into per-endpoint directories under `src/`; each directory
 | Directory | Role |
 |---|---|
 | `src/MatterDevice/` | `MatterDevice.swift` (root node, `Endpoint` nested struct, `run()`); `matter_core.h/cpp` (shared types, attribute helpers, node/stack API); `matter.h` (umbrella header) |
-| `src/FactoryData/` | `MatterFactoryData.swift` — populates the `chip-factory` NVS namespace (vendor/product/hw-version/serial) that esp_matter's device-instance-info provider reads. Pure Swift, no C facade. |
+| `src/FactoryData/` | `MatterFactoryData.swift` — writes `serial-num` into the `chip-factory` NVS namespace that esp_matter's device-instance-info provider reads. Pure Swift, no C facade. |
 | `src/RootClusters/TimeSynchronization/` | `TimeSynchronization.swift`; `matter_time_synchronization.h/cpp` (Time Synchronization cluster, 0x0038, on the *root* endpoint — not a new device-type endpoint) |
 | `src/Endpoints/TemperatureSensorEndpoint/` | `TemperatureSensorEndpoint.swift`; `matter_temperature_sensor.h/cpp` (device type 0x0302) |
 | `src/Endpoints/HumiditySensorEndpoint/` | `HumiditySensorEndpoint.swift`; `matter_humidity_sensor.h/cpp` (device type 0x0307) |
@@ -75,6 +75,11 @@ Battery feature). `set(percent:voltageMv:)` writes BatPercentRemaining (scaled �
 half-percent range) and BatVoltage (mV); pass `nil` for either to set the Matter null sentinel.
 `set(_:)` is non-mutating, so the endpoint can be stored as `let`.
 
+`MatterDevice.factoryReset()` wraps `esp_matter::factory_reset()` (`esp_matter_factory_reset()` in
+`matter_core.h/cpp`) — erases Matter/Thread NVS state and reboots. Only call after `run()` returns:
+`chip::Server::ScheduleFactoryReset()` requires the CHIP event loop to already be running, so
+calling it earlier is undefined behavior. Does not return on success.
+
 `MatterDevice.enableTimeSynchronization()` adds the Time Synchronization cluster (0x0038) to the
 *root* endpoint (not a new device-type endpoint — Matter defines this cluster as living on EP0).
 Call it after `MatterDevice()` init and before `run()`. It's a fire-and-forget call, not a
@@ -99,10 +104,11 @@ Assistant, ...) writes its own known local timezone — derived from phone local
 tz, no GPS or UI needed on the device — into the cluster's `TimeZone`/`DSTOffset` attributes.
 Without this feature bit (esp_matter's own `time_synchronization::create()` hardcodes
 `FeatureMap=0`), commissioners skip that stage entirely and the device only ever has UTC.
-`MatterDevice.localUnixTime() -> Int64?` reads back the result: it calls
+`MatterDevice.localDate() -> Date?` reads back the result: it calls
 `TimeSynchronizationServer::Instance().GetLocalTime()` (connectedhomeip's own UTC+TimeZone+DSTOffset
-math, in CHIP-epoch microseconds since 2000-01-01) and converts to Unix epoch seconds via
-`chip::ChipEpochToUnixEpochMicros()`. Returns `nil` until both the clock is synced *and* a
+math, in CHIP-epoch microseconds since 2000-01-01), converts to Unix epoch seconds via
+`chip::ChipEpochToUnixEpochMicros()`, and wraps the result in an `esp-swift-foundation` `Date`
+(hence esp-swift-matter's dependency on esp-swift-foundation). Returns `nil` until both the clock is synced *and* a
 controller has written a timezone — callers should keep a fallback path (e.g. a hardcoded TZ) for
 use before that happens. The returned value is UTC-plus-offset baked into a fake epoch, not a
 real Unix timestamp — format it with `gmtime_r` (not `localtime_r`), since no actual `TZ` env var
@@ -116,7 +122,7 @@ reboot), the device stays unsynced until the next reboot. `retryTimeSync()` re-e
 attempt chain via `SetTrustedTimeSource(GetTrustedTimeSource())` (the real `AttemptToGetTime()` is
 private). Must be called under `esp_matter::lock::ScopedChipStackLock` when invoked from the app's
 own task rather than the CHIP event-loop thread — `matter_time_synchronization.cpp` does this
-internally. Callers should poll it periodically (e.g. a status-logging loop) while `localUnixTime()`
+internally. Callers should poll it periodically (e.g. a status-logging loop) while `localDate()`
 stays `nil`. See `matter-time-test/TIME-SYNC.md` for the full investigation that led to this fix.
 
 **NTP fallback delegate and `setDefaultNTP`** — connectedhomeip's `DefaultTimeSyncDelegate` leaves
@@ -154,9 +160,12 @@ dead stub. Two independent fixes were needed, both in `matter_time_synchronizati
    `esp_matter_time_synchronization_set_default_ntp`) seeds a local `DefaultNTP` value directly via
    `TimeSynchronizationServer::Instance().SetDefaultNTP()` — but only if `GetDefaultNtp()` shows
    nothing is stored yet, so it doesn't fight a value a controller already wrote. Call it after
-   `enableTimeSynchronization()` and before `run()`. Host must be IPv6-reachable (e.g.
-   `"time.google.com"`, `"2.pool.ntp.org"`) since Thread is an IPv6-only transport and many
-   `pool.ntp.org` entries are IPv4-only.
+   `run()`, not before: `TimeSynchronizationServer`'s persistent-storage pointer (which
+   `GetDefaultNtp()`/`SetDefaultNTP()` dereference through `TimeSyncDataProvider::Load`) is only
+   set by `MatterTimeSynchronizationPluginServerInitCallback`, fired synchronously from
+   `esp_matter_start()` inside `run()` — calling `setDefaultNTP()` any earlier null-derefs.
+   Host must be IPv6-reachable (e.g. `"time.google.com"`, `"2.pool.ntp.org"`) since Thread is an
+   IPv6-only transport and many `pool.ntp.org` entries are IPv4-only.
 
 ## Public API — factory data
 
@@ -164,27 +173,33 @@ dead stub. Two independent fixes were needed, both in `matter_time_synchronizati
 import Matter
 
 // Once at boot, after nvs_flash_init() and before MatterDevice()/matter.run():
-MatterFactoryData.initialize(
-    vendorName: "Acme",
-    productName: "Widget",
-    hwVersion: "1.0",
-    serialNumber: MatterFactoryData.macSerial(prefix: "AC")
-)
+MatterFactoryData.initialize(serialNumber: MatterFactoryData.macSerial(prefix: "AC"))
 ```
 
-`initialize` writes `vendor-name`/`product-name`/`hw-ver-str`/`serial-num` into the
-`chip-factory` NVS namespace only if each key is missing — safe to call on every boot.
-Never throws (a factory-data write failure on an already-provisioned device must not
-block boot); failures are logged via `NVS`'s own logging and skipped.
+`initialize` writes `serial-num` into the `chip-factory` NVS namespace only if it's
+missing — safe to call on every boot. Never throws (a factory-data write failure on an
+already-provisioned device must not block boot); failures are logged via `NVS`'s own
+logging and skipped.
 `macSerial(prefix:)` is an optional convenience that derives a serial number from the
 last 4 bytes of the device's 802.15.4 MAC address; callers with a different serial
 scheme (e.g. a manufacturing-programmed serial) just pass their own `serialNumber`
-string instead. The `"chip-factory"` namespace and exact key strings are hardcoded
+string instead. The `"chip-factory"` namespace and exact key string are hardcoded
 internally — they're fixed by connectedhomeip's `ESP32Config.cpp` and are not
 caller-configurable. Always writes to the default NVS partition (matching
 `CONFIG_CHIP_FACTORY_NAMESPACE_PARTITION_LABEL`'s default); no consumer in this
 mono-repo uses a dedicated `fctry` partition, so partition-label support was dropped
 from `NVS`/`MatterFactoryData` (see `SwiftNVS/CLAUDE.md`).
+
+`vendor-name`/`product-name`/`hw-ver-str` used to be written here too — removed because
+`GenericDeviceInstanceInfoProvider` (the default `DeviceInstanceInfoProvider` unless a
+project enables `CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER`) hardcodes
+`GetVendorName()`/`GetProductName()`/`GetHardwareVersionString()` to compile-time
+`CHIP_DEVICE_CONFIG_*` macros and never reads NVS for them — those writes were dead on
+every consumer, not just one project. `GetSerialNumber()` and the numeric
+`GetHardwareVersion()` *do* read NVS, which is why `serial-num` stays. Vendor/product
+name now need a `CHIP_PROJECT_CONFIG` override header at the app level instead (see
+`matter-time-test/chip_project_config.h` for a working example and why the include
+wiring is non-obvious on ESP-IDF).
 
 ## Non-obvious patterns
 

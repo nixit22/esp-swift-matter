@@ -19,6 +19,7 @@
 // SOFTWARE.
 
 import ESP_Matter
+import Foundation
 
 extension MatterDevice {
     /// Enables the Time Synchronization cluster (0x0038) on the root endpoint.
@@ -33,13 +34,17 @@ extension MatterDevice {
         _ = esp_matter_enable_time_synchronization()
     }
 
-    /// Current local wall-clock time as Unix epoch seconds, combining the synced UTC clock
-    /// with the TimeZone/DSTOffset a commissioner wrote via the TZ feature (enabled by
+    /// Current local wall-clock time, combining the synced UTC clock with the
+    /// TimeZone/DSTOffset a commissioner wrote via the TZ feature (enabled by
     /// `enableTimeSynchronization()`). Returns `nil` until both the clock is synced and a
     /// controller has written a timezone.
-    public func localUnixTime() -> Int64? {
+    ///
+    /// The returned `Date`'s `timeIntervalSince1970` is UTC epoch seconds already shifted by
+    /// that offset, not a real UTC instant — callers formatting it should account for
+    /// `Date.description`'s hardcoded `" +0000"` suffix being misleading here.
+    public func localDate() -> Date? {
         let t = esp_matter_time_synchronization_get_local_unix_time()
-        return t == Int64.min ? nil : t
+        return t == Int64.min ? nil : Date(timeIntervalSince1970: TimeInterval(t))
     }
 
     /// Re-attempts the Time Synchronization cluster's time fetch.
@@ -48,7 +53,7 @@ extension MatterDevice {
     /// `SetTrustedTimeSource`). If that single attempt's CASE session to the trusted time source
     /// node times out — e.g. the Thread mesh hasn't settled yet right after a reboot — there's no
     /// built-in retry, and the device stays unsynced until the next reboot. Callers should poll
-    /// this periodically (e.g. from a status-logging loop) while `localUnixTime()`/the system
+    /// this periodically (e.g. from a status-logging loop) while `localDate()`/the system
     /// clock stays unsynced.
     public func retryTimeSync() {
         esp_matter_time_synchronization_retry_sync()
@@ -65,7 +70,10 @@ extension MatterDevice {
     /// `host` must be IPv6-reachable (e.g. `"time.google.com"`, `"2.pool.ntp.org"`) — Thread is
     /// an IPv6-only transport, and many `pool.ntp.org` entries are IPv4-only and fail silently.
     ///
-    /// Call after `enableTimeSynchronization()` and before `run()`.
+    /// Call after `run()`. `TimeSynchronizationServer`'s persistent-storage pointer, which this
+    /// reads/writes through, is only set up by `MatterTimeSynchronizationPluginServerInitCallback`,
+    /// fired synchronously from `esp_matter_start()` inside `run()` — calling this any earlier
+    /// null-derefs in `TimeSyncDataProvider::Load`.
     public func setDefaultNTP(_ host: String) {
         host.withCString { esp_matter_time_synchronization_set_default_ntp(host: $0) }
     }
