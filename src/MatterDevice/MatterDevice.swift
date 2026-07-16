@@ -157,6 +157,15 @@ public final class MatterDevice {
             esp_matter_print_onboarding_codes()
         }
     }
+
+    /// Erases all Matter/Thread NVS state and reboots the device.
+    ///
+    /// Only call after `run()` returns — the underlying `chip::Server::ScheduleFactoryReset()`
+    /// call requires the CHIP event loop to be running. Does not return on success: the
+    /// device restarts once the reset completes.
+    public func factoryReset() {
+        ESP_ERROR_CHECK(esp_matter_factory_reset())
+    }
 }
 
 /// Returns the last two bytes of the device's 802.15.4 MAC address as four ASCII hex nibbles.

@@ -139,6 +139,11 @@ extern "C" bool esp_matter_is_commissioned(void)
     return chip::Server::GetInstance().GetFabricTable().FabricCount() > 0;
 }
 
+extern "C" esp_err_t esp_matter_factory_reset(void)
+{
+    return esp_matter::factory_reset();
+}
+
 extern "C" _esp_matter_attr_val_t esp_matter_attr_nullable_int16(int16_t value, bool isNull)
 {
     nullable<int16_t> n = isNull ? nullable<int16_t>() : nullable<int16_t>(value);

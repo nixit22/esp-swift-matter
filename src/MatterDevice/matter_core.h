@@ -263,6 +263,14 @@ void esp_matter_print_onboarding_codes(void);
  */
 bool esp_matter_is_commissioned(void);
 
+/** Erases all Matter/Thread NVS state and reboots the device.
+ *
+ *  Wraps esp_matter::factory_reset(), which schedules the reset on the CHIP event loop —
+ *  requires chip::Server to be running, so only call after esp_matter_start() returns.
+ *  Does not return on success: the device restarts once the reset completes.
+ */
+esp_err_t esp_matter_factory_reset(void);
+
 SWIFT_NAME("esp_matter_attribute_update(endpointId:clusterId:attributeId:value:)")
 esp_err_t esp_matter_attribute_update(uint16_t endpoint_id, uint32_t cluster_id, uint32_t attribute_id,
                                      _esp_matter_attr_val_t *val);

@@ -51,7 +51,7 @@ idf_component_register(
         src/Endpoints/ClosureEndpoint
         src/Endpoints/ModeSelectEndpoint
         src/Endpoints/PowerSourceEndpoint
-    REQUIRES esp_matter esp-swift-platform esp-swift-nvs
+    REQUIRES esp_matter esp-swift-platform esp-swift-nvs esp-swift-foundation
     PRIV_REQUIRES esp-swift-support
 )
 
