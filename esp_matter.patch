@@ -1,11 +1,32 @@
-# Gate esp_matter's component-level PUBLIC compile options on
-# COMPILE_LANGUAGE:C,CXX so the Embedded Swift driver (which sees these flags
-# via its Clang front-end) doesn't reject `-Wno-error=...` and `-std=gnu++17`.
+# Patches applied to the registry-managed espressif/esp_matter component at
+# configure time (see project_include.cmake). Two independent hunks:
 #
-# Companion to the `json` shim in SwiftMatter/shims/json/ which satisfies
-# esp_matter's `REQUIRES json` after IDF 6.0 removed the built-in `json`
-# component.  The shim handles the requirements-graph side; this patch
-# handles the compile-flag side.
+# 1. CMakeLists.txt — gates esp_matter's component-level PUBLIC compile
+#    options on COMPILE_LANGUAGE:C,CXX so the Embedded Swift driver (which
+#    sees these flags via its Clang front-end) doesn't reject `-Wno-error=...`
+#    and `-std=gnu++17`.
+#
+# 2+3. components/esp_matter/.../closure_control/integration.{h,cpp} —
+#    esp_matter's own ClosureControl integration glue (not connectedhomeip's)
+#    has no way for a caller to (a) fetch the live cluster instance by
+#    endpoint, or (b) seed an initial OverallCurrentState before the cluster
+#    is constructed — both of which
+#    SwiftMatter/src/Endpoints/ClosureEndpoint/matter_closure.cpp needs.
+#    Adds two small accessor functions alongside the existing
+#    MatterClosureControlSetDelegate(), matching the GetClusterInstance()/
+#    Set*() pattern esp_matter already uses for time_synchronization,
+#    resource_monitor and electrical_energy_measurement — closure_control
+#    (their newest cluster integration) just hasn't caught up to it yet.
+#    Reported upstream: https://github.com/espressif/esp-matter/issues/1824
+#    — drop this hunk once that lands.
+#
+# (An earlier version of this patch also touched connectedhomeip's
+# TimeSynchronizationCluster.h to expose trusted-time-source state for a
+# retryTimeSync() facade function — removed once we established that gap is
+# a known, widely-reported ecosystem issue being fixed in controllers
+# (e.g. matter.js's TimeSyncManager, a Home Assistant custom component), not
+# something devices are expected to work around, and that our own use case
+# doesn't need it anyway.)
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -497,8 +497,15 @@
@@ -26,3 +47,70 @@
  target_compile_options(${COMPONENT_LIB} PUBLIC "-DCHIP_HAVE_CONFIG_H")
 
  # TODO: remove this when building connectedhomeip/src/controller/CHIPDeviceController.cpp with no format error
+--- a/components/esp_matter/data_model_provider/clusters/closure_control/integration.h
++++ b/components/esp_matter/data_model_provider/clusters/closure_control/integration.h
+@@ -22,8 +22,20 @@
+ namespace Clusters {
+ namespace ClosureControl {
+
++class ClosureControlCluster;
++
+ void MatterClosureControlSetDelegate(EndpointId endpointId, ClosureControlClusterDelegate &delegate);
+
++// esp-swift-matter: seed the initial OverallCurrentState before the cluster is
++// constructed (must be called before esp_matter_start()); esp_matter's own
++// integration otherwise always starts from Config defaults.
++void MatterClosureControlSetInitialOverallCurrentState(
++    EndpointId endpointId, const DataModel::Nullable<GenericOverallCurrentState> &state);
++
++// esp-swift-matter: fetch the live per-endpoint cluster instance (nullptr before
++// esp_matter_start() completes, or after shutdown).
++ClosureControlCluster *GetClusterInstance(EndpointId endpointId);
++
+ } // namespace ClosureControl
+ } // namespace Clusters
+ } // namespace app
+--- a/components/esp_matter/data_model_provider/clusters/closure_control/integration.cpp
++++ b/components/esp_matter/data_model_provider/clusters/closure_control/integration.cpp
+@@ -40,6 +40,7 @@
+
+ std::unordered_map<EndpointId, LazyRegisteredServerCluster<ClosureControlCluster>> gServers;
+ std::unordered_map<EndpointId, ClosureControlClusterDelegate *> gDelegates;
++std::unordered_map<EndpointId, DataModel::Nullable<GenericOverallCurrentState>> gInitialStates;
+
+ } // namespace
+
+@@ -56,6 +57,19 @@
+     gDelegates[endpointId] = &delegate;
+ }
+
++void MatterClosureControlSetInitialOverallCurrentState(EndpointId endpointId,
++                                                        const DataModel::Nullable<GenericOverallCurrentState> &state)
++{
++    gInitialStates[endpointId] = state;
++}
++
++ClosureControlCluster *GetClusterInstance(EndpointId endpointId)
++{
++    auto it = gServers.find(endpointId);
++    VerifyOrReturnValue(it != gServers.end() && it->second.IsConstructed(), nullptr);
++    return &it->second.Cluster();
++}
++
+ } // namespace ClosureControl
+ } // namespace Clusters
+ } // namespace app
+@@ -113,6 +127,13 @@
+             config.WithCountdownTime();
+         }
+
++        // esp-swift-matter: apply an initial OverallCurrentState if the app supplied one via
++        // MatterClosureControlSetInitialOverallCurrentState() before esp_matter_start().
++        auto initialStateIt = gInitialStates.find(endpointId);
++        if (initialStateIt != gInitialStates.end()) {
++            config.WithInitialOverallCurrentState(initialStateIt->second);
++        }
++
+         // MainState, OverallCurrentState, LatchControlModes are MANAGED_INTERNALLY —
+         // no reliable values in esp-matter store. Use Config defaults; the code-driven
+         // cluster initializes them properly via Startup().

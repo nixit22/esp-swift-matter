@@ -2,7 +2,7 @@
 
 Swift wrapper for the ESP-Matter SDK. Swift module name: **`Matter`**.
 
-Depends on: `SwiftPlatform`, `SwiftNVS`, `SwiftSupport`, `espressif/esp_matter` (registry, pinned to 1.5.0).
+Depends on: `SwiftPlatform`, `SwiftNVS`, `SwiftSupport`, `espressif/esp_matter` (registry, pinned to 1.6.0).
 
 ## Files
 
@@ -21,8 +21,8 @@ Sources are organized into per-endpoint directories under `src/`; each directory
 | `src/Endpoints/ModeSelectEndpoint/` | `ModeSelectEndpoint.swift`; `matter_mode_select.h/cpp` (cluster 0x0050, device type 0x0050) |
 | `src/Endpoints/PowerSourceEndpoint/` | `PowerSourceEndpoint.swift`; `matter_power_source.h/cpp` (device type 0x0011, PowerSource cluster with Battery feature) |
 | `module.modulemap` | Clang module `ESP_Matter` — umbrella over `src/MatterDevice/matter.h` |
-| `project_include.cmake` | Patches esp_matter's `CMakeLists.txt` at project configure |
-| `esp_matter.patch` | Gates esp_matter compile options on `COMPILE_LANGUAGE:C,CXX` |
+| `project_include.cmake` | Applies `esp_matter.patch` to the managed esp_matter component at project configure |
+| `esp_matter.patch` | Compile-flag gating (`COMPILE_LANGUAGE:C,CXX`) + ClosureControl accessor functions — see the patch's own header comment |
 
 ## Public API
 
@@ -84,9 +84,9 @@ calling it earlier is undefined behavior. Does not return on success.
 *root* endpoint (not a new device-type endpoint — Matter defines this cluster as living on EP0).
 Call it after `MatterDevice()` init and before `run()`. It's a fire-and-forget call, not a
 struct — the whole sync flow happens inside CHIP with no Swift-side state or attribute writes.
-Passes a custom `SwiftTimeSyncDelegate` (in `matter_time_synchronization.cpp`, subclassing
-connectedhomeip's `DefaultTimeSyncDelegate`) rather than a null delegate — see "NTP fallback
-delegate" below. It inherits the Trusted-Time-Source client feature, compiled in by default
+Passes connectedhomeip's stock `DefaultTimeSyncDelegate`, unmodified — this is the standard
+esp_matter/connectedhomeip pattern (no example app in either repo subclasses this delegate).
+It inherits the Trusted-Time-Source client feature, compiled in by default
 (`TIME_SYNC_ENABLE_TSC_FEATURE` is only forced off when `CONFIG_DISABLE_READ_CLIENT` is set). Once
 commissioned, if the controller (or another fabric node) registers itself as a Trusted Time
 Source, the device reads UTC time over a CASE session and calls `SetClock_RealTime()`, which
@@ -96,76 +96,39 @@ the trusted-time-source sync itself, but gates `GetClock_RealTime()` (used for c
 and by `DefaultTimeSyncDelegate::UpdateTimeFromPlatformSource`), which otherwise always reports
 `CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE` even after the clock has been set once.
 
-`enableTimeSynchronization()` also calls `esp_matter::cluster::time_synchronization::feature::time_zone::add()`
-to advertise the cluster's TimeZone (`TZ`) feature bit. This is the Matter mechanism by which a
-UI-less device learns local time: with the bit set, `AutoCommissioner` runs the
-`kConfigureTimeZone` stage during commissioning and the controller (Apple Home, Google Home, Home
-Assistant, ...) writes its own known local timezone — derived from phone locale or hub server
-tz, no GPS or UI needed on the device — into the cluster's `TimeZone`/`DSTOffset` attributes.
-Without this feature bit (esp_matter's own `time_synchronization::create()` hardcodes
-`FeatureMap=0`), commissioners skip that stage entirely and the device only ever has UTC.
-`MatterDevice.localDate() -> Date?` reads back the result: it calls
-`TimeSynchronizationServer::Instance().GetLocalTime()` (connectedhomeip's own UTC+TimeZone+DSTOffset
-math, in CHIP-epoch microseconds since 2000-01-01), converts to Unix epoch seconds via
-`chip::ChipEpochToUnixEpochMicros()`, and wraps the result in an `esp-swift-foundation` `Date`
-(hence esp-swift-matter's dependency on esp-swift-foundation). Returns `nil` until both the clock is synced *and* a
-controller has written a timezone — callers should keep a fallback path (e.g. a hardcoded TZ) for
-use before that happens. The returned value is UTC-plus-offset baked into a fake epoch, not a
-real Unix timestamp — format it with `gmtime_r` (not `localtime_r`), since no actual `TZ` env var
-is involved.
+`enableTimeSynchronization()` does **not** advertise the cluster's TimeZone (`TZ`) feature bit and
+there is no `localDate()`-style API — deliberately. `TZ` is a controller-supplied UTC *display*
+offset (derived from phone locale / hub server tz), unrelated to a device's actual geographic
+location; it existed in an earlier version of this component but nothing here needs it. Callers
+wanting real local solar time (e.g. sunrise/sunset) should use plain UTC (`time()`/
+`gettimeofday()`, synced via `startNTPSync(host:)` below) together with the device's own known
+latitude/longitude — Matter has no cluster that provides the latter.
 
-`MatterDevice.retryTimeSync()` re-invokes the Time Synchronization cluster's time-fetch attempt.
-connectedhomeip only calls its internal `AttemptToGetTime()` once, on boot (plus once more if a
-controller resends `SetTrustedTimeSource`) — no built-in periodic retry. If that single attempt's
-CASE session to the trusted time source times out (e.g. Thread mesh not yet settled right after a
-reboot), the device stays unsynced until the next reboot. `retryTimeSync()` re-enters the same
-attempt chain via `SetTrustedTimeSource(GetTrustedTimeSource())` (the real `AttemptToGetTime()` is
-private). Must be called under `esp_matter::lock::ScopedChipStackLock` when invoked from the app's
-own task rather than the CHIP event-loop thread — `matter_time_synchronization.cpp` does this
-internally. Callers should poll it periodically (e.g. a status-logging loop) while `localDate()`
-stays `nil`. See `matter-time-test/TIME-SYNC.md` for the full investigation that led to this fix.
+`MatterDevice.startNTPSync(host:)` runs SNTP independently of the Time Synchronization cluster —
+this is the standard esp_matter/connectedhomeip pattern (see connectedhomeip's
+`examples/platform/esp32/time/TimeSync.cpp`), not something layered on top of the cluster's
+delegate. `esp_matter_time_synchronization_start_sntp()` (`matter_time_synchronization.cpp`)
+calls `esp_netif_sntp_init()` with a `sync_cb` that calls `settimeofday()` (via `esp_netif_sntp`'s
+own lwIP client) — no interaction with the Matter cluster at all, and none needed:
+`DefaultTimeSyncDelegate::UpdateTimeFromPlatformSource()` just checks whether the system clock is
+already set (`System::SystemClock().GetClock_RealTime()`) and succeeds if so, so *if and when*
+`AttemptToGetTime()` next runs it picks up whatever `startNTPSync` already set. Call once, any
+time — doesn't require `enableTimeSynchronization()` or `run()` first, since `esp_netif_sntp_init()`
+never touches the CHIP stack.
 
-**NTP fallback delegate and `setDefaultNTP`** — connectedhomeip's `DefaultTimeSyncDelegate` leaves
-`UpdateTimeUsingNTPFallback` unimplemented (`return CHIP_ERROR_NOT_IMPLEMENTED`, unchanged as of
-this writing even on upstream `main`), so the NTP branch of `AttemptToGetTime()` was previously a
-dead stub. Two independent fixes were needed, both in `matter_time_synchronization.cpp`:
-
-1. `SwiftTimeSyncDelegate : public DefaultTimeSyncDelegate` overrides only
-   `UpdateTimeUsingNTPFallback` (everything else — `IsNTPAddressValid`, `IsNTPAddressDomain`,
-   `UpdateTimeFromPlatformSource` — is inherited as-is). The override spawns a dedicated FreeRTOS
-   task to run ESP-IDF's `esp_netif_sntp` client (`esp_netif_sntp_init` +
-   `esp_netif_sntp_sync_wait`, blocking) against the delegate-supplied NTP hostname —
-   deliberately off the CHIP event-loop thread, since `UpdateTimeUsingNTPFallback` runs on it (or
-   under `ScopedChipStackLock` via `retryTimeSync()`), and a blocking SNTP call there would stall
-   the whole Matter stack. The result is marshaled back via
-   `chip::DeviceLayer::PlatformMgr().ScheduleWork()` so the completion callback fires on the CHIP
-   thread as required. `esp_netif_sntp`'s own lwIP client calls `settimeofday()` internally on
-   sync, so the delegate does not call `SetClock_RealTime()` itself — doing so would just be a
-   redundant second `settimeofday()`. A `std::atomic<bool>` in-flight guard makes a re-entrant
-   call (e.g. from `retryTimeSync()`'s 30s loop, while a prior query is still waiting on the SNTP
-   timeout) return `CHIP_ERROR_BUSY` instead of racing a second task. `esp_netif_sntp` is a
-   singleton — the task calls `esp_netif_sntp_deinit()` before finishing either way, since a
-   second `esp_netif_sntp_init()` without a prior deinit errors.
-2. `esp_matter_enable_time_synchronization()` now passes a non-null `config.delegate` pointing at
-   a static `SwiftTimeSyncDelegate` instance — `esp_matter_cluster.cpp`'s
-   `time_synchronization::create()` already wires any non-null `config->delegate` via
-   `set_delegate_and_init_callback(cluster, TimeSynchronizationDelegateInitCB, config->delegate)`
-   → `TimeSynchronization::SetDefaultDelegate()`, so no esp_matter patch/fork was needed.
-3. **This alone is not sufficient.** connectedhomeip's `AttemptToGetFallbackNTPTimeFromDelegate()`
-   calls `TimeSynchronizationServer::GetDefaultNtp()` *first* and bails out to
-   `emitTimeFailureEvent` *before ever calling the delegate* if no `DefaultNTP` value has been
-   stored — and no controller observed in practice (Apple Home, Home Assistant — see
-   `matter-time-test/TIME-SYNC.md` §5/§6) ever sends the `SetDefaultNTP` command. So
-   `MatterDevice.setDefaultNTP(_ host: String)` (wrapping the new C function
-   `esp_matter_time_synchronization_set_default_ntp`) seeds a local `DefaultNTP` value directly via
-   `TimeSynchronizationServer::Instance().SetDefaultNTP()` — but only if `GetDefaultNtp()` shows
-   nothing is stored yet, so it doesn't fight a value a controller already wrote. Call it after
-   `run()`, not before: `TimeSynchronizationServer`'s persistent-storage pointer (which
-   `GetDefaultNtp()`/`SetDefaultNTP()` dereference through `TimeSyncDataProvider::Load`) is only
-   set by `MatterTimeSynchronizationPluginServerInitCallback`, fired synchronously from
-   `esp_matter_start()` inside `run()` — calling `setDefaultNTP()` any earlier null-derefs.
-   Host must be IPv6-reachable (e.g. `"time.google.com"`, `"2.pool.ntp.org"`) since Thread is an
-   IPv6-only transport and many `pool.ntp.org` entries are IPv4-only.
+**No proactive retry of the cluster's own time fetch, on purpose.** connectedhomeip only calls
+its internal `AttemptToGetTime()` once, on boot (`kServerReady`) — plus again whenever a
+controller resends `SetTrustedTimeSource`. If a reboot happens before the mesh/network settles,
+the cluster's own `UTCTime`/`Granularity` attributes can stay stuck at "unsynced" until the next
+controller interaction. This is a widely-known, widely-discussed ecosystem gap (see e.g.
+IKEA's ALPSTUGA losing its clock on every power cycle) — but the fix has moved to *controllers*,
+not devices: matter.js's server added a `TimeSyncManager` that proactively resyncs on
+reconnect/failure/a 12h timer, and a Home Assistant custom component pushes time the same way.
+Earlier revisions of this component patched a private `SetTrustedTimeSource`/`GetTrustedTimeSource`
+friend into `TimeSynchronizationCluster.h` to nudge this from the device side — removed once that
+research surfaced; it's not something devices are expected to work around, and our own use of
+this cluster doesn't depend on its attributes being timely anyway (see `matter-time-test/TIME-SYNC.md`
+for the investigation that originally motivated it).
 
 ## Public API — factory data
 
@@ -221,12 +184,12 @@ every boot vs. serial written once to NVS) — not worth forcing into one abstra
 
 **Event callback uses `passUnretained`** — the event callback arg is `Unmanaged.passUnretained(self)`, not `passRetained`, because the `init()` `passRetained` already keeps the object alive for the process lifetime. A second retain would leak.
 
-**Patched at configure time** — `project_include.cmake` applies `esp_matter.patch` to `managed_components/espressif__esp_matter/CMakeLists.txt` so esp_matter's PUBLIC compile options are gated by `$<$<COMPILE_LANGUAGE:C,CXX>:...>`. Without that gating, the Swift driver chokes on `-Wno-error=...` and `-std=gnu++17`. The patch is idempotent (sentinel `PATCH_APPLIED`) and inert when esp_matter hasn't been downloaded.
+**Patched at configure time** — `project_include.cmake` applies `esp_matter.patch` to the registry-managed `managed_components/espressif__esp_matter` tree: gates esp_matter's PUBLIC compile options behind `$<$<COMPILE_LANGUAGE:C,CXX>:...>` (without that, the Swift driver chokes on `-Wno-error=...` and `-std=gnu++17`), and adds two small accessor functions (`ClosureControl::GetClusterInstance`/`SetInitialOverallCurrentState`) that esp_matter 1.6.0 doesn't expose publicly but our C facade needs — see the patch file's own header comment for the current list. The patch is idempotent (sentinel `PATCH_APPLIED`) and inert when esp_matter hasn't been downloaded.
 
 If you edit `esp_matter.patch` itself, run `idf.py reconfigure` afterwards — CMake doesn't watch the patch file as a configure dependency, so a plain `idf.py build` won't re-evaluate `project_include.cmake` and the patch won't be re-applied.
 
 **Delegate-pattern clusters use a generic C++ trampoline + shared Swift box** — Some clusters (e.g. ValveConfigurationAndControl) handle commands via a `chip::app::Clusters::Foo::Delegate` virtual interface rather than through `esp_matter::attribute::update()`. For each such cluster, its `matter_*.cpp` file defines a `Swift*Delegate` class (inheriting the cluster's specific base) that stores a single `matter_command_cb_t` function pointer and dispatches from virtual methods using cluster-specific `ESP_MATTER_*_CMD_*` constants as `command_id`. On the Swift side, a single shared `CommandCallbacks` class (in `MatterDevice.swift`) holds a `(UInt16, UInt8) -> Void` dispatch closure — all delegate-pattern endpoints reuse it instead of per-cluster callback box classes. The `void *delegate` field in each cluster's `config_t` is how esp_matter forwards the pointer to `Cluster::SetDefaultDelegate()` during `esp_matter::start()`. Adding a new delegate-pattern cluster requires: (1) a new `Swift*Delegate` C++ class in that cluster's `.cpp` file, (2) a factory function + `ESP_MATTER_*_CMD_*` defines in its `.h` file, (3) a new `*Endpoint.swift` that reuses `CommandCallbacks`.
 
-**ClosureControl cluster has a custom init CB** — `ClosureEndpoint` (`ClosureEndpoint.swift` / `matter_closure.cpp`) uses a more complex delegate pattern. The `ClusterLogic` / `Interface` / `MatterContext` trio must all be constructed AND `ClusterLogic::Init()` must be called — but esp_matter 1.5.0's `ClosureControlDelegateInitCB` omits the `Init()` call, causing an abort on the first Stop or MoveTo command. Fix: `esp_matter_endpoint_closure_create` passes `delegate=nullptr` to suppress the stock CB, then calls `esp_matter::cluster::set_delegate_and_init_callback(cluster, SwiftClosureControlDelegateInitCB, d)` to register our custom CB that correctly calls `ClusterLogic::Init(conformance, initParams)`. The conformance `FeatureMap` is built from the caller's `feature_flags` via `BitFlags::SetRaw()` — a single source of truth matching both the ZAP feature map and the conformance object. A global table `gClosureTable[4]` maps endpoint IDs to `SwiftClosureDelegate*` (populated at factory time, logging an error and dropping the endpoint if the table is already full) so `set_main_state` / `set_current_position` can reach `ClusterLogic` after start. `ClosureEndpoint` uses its own `ClosureCallbacks` box (in `ClosureEndpoint.swift`) rather than `CommandCallbacks`, because the MoveTo command carries three optional parameters that don't fit the generic `(UInt16, UInt8) -> Void` signature.
+**ClosureControl cluster delegate wiring (esp_matter 1.6.0)** — `ClosureEndpoint` (`ClosureEndpoint.swift` / `matter_closure.cpp`) implements `chip::app::Clusters::ClosureControl::ClosureControlClusterDelegate` directly and passes it through the normal `cfg.closure_control.delegate` path — no custom init callback needed any more. Earlier (esp_matter 1.5.0), a hand-rolled `ClusterLogic`/`Interface`/`MatterContext` construction plus a custom init CB (`SwiftClosureControlDelegateInitCB`) and an endpoint→delegate lookup table (`gClosureTable[4]`) were needed to work around a bug where the stock `ClosureControlDelegateInitCB` never called `ClusterLogic::Init()`, aborting on the first Stop or MoveTo. 1.6.0 rewrote this cluster's integration (`components/esp_matter/data_model_provider/clusters/closure_control/integration.cpp`, not connectedhomeip's) to construct it correctly itself — that whole workaround was deleted. Two gaps remain, closed via `esp_matter.patch`: `ClosureControlCluster::SetMainState`/`SetOverallCurrentState` are reachable from our facade only through a patch-added `ClosureControl::GetClusterInstance(endpointId)` (esp_matter's own glue keeps its per-endpoint cluster map file-local), and `initial_position` is applied via a patch-added `ClosureControl::MatterClosureControlSetInitialOverallCurrentState(endpointId, state)` called before `esp_matter_start()` (esp_matter's `Config` builder supports `WithInitialOverallCurrentState()` but its own integration code never calls it, always starting from defaults). This mirrors the `GetClusterInstance()`/`Set*()` accessor pattern esp_matter already exposes for `time_synchronization`, `resource_monitor` and `electrical_energy_measurement` — `closure_control` is their newest cluster integration and just hasn't caught up yet; reported upstream at https://github.com/espressif/esp-matter/issues/1824, drop the patch hunk once that lands. `ClosureEndpoint` still uses its own `ClosureCallbacks` box (in `ClosureEndpoint.swift`) rather than the shared `CommandCallbacks`, because the MoveTo command carries three optional parameters that don't fit the generic `(UInt16, UInt8) -> Void` signature. **Unverified**: the delegate/init-callback ordering (`MatterClosureControlSetDelegate` must run before `ESPMatterClosureControlClusterServerInitCallback`) and the whole Closure/TimeSync runtime path are compile-checked only — the test-app never calls `MatterDevice.run()`.
 
-**Pulled via the IDF Component Manager** — `idf_component.yml` declares `espressif/esp_matter` 1.5.0 (pinned because it targets ESP-IDF 5.4 only — IDF 6.0 breaks several of esp_matter's transitive deps including `json`, `mbedtls/entropy.h`, and `esp-serial-flasher`). Any consumer (including `swift-esp/test-app`) that lists `SwiftMatter` in `REQUIRES` triggers the manager to fetch esp_matter and its tree into `managed_components/`. `MatterDevice.run()` only succeeds when the host project enables BT, OpenThread, custom partition table, MBEDTLS_HKDF_C, etc. The test-app intentionally does **not** call `MatterDevice.run()`; it lists `SwiftMatter` as a REQUIRES dependency only, to validate that the component links cleanly.
+**Pulled via the IDF Component Manager** — `idf_component.yml` declares `espressif/esp_matter` 1.6.0, with `idf: ">=5.5,<6"` kept as an intentional upper bound: upstream's `release/v1.6` branch (what the 1.6.0 registry package is built from) itself recommends ESP-IDF v5.5.5, not v6.0.x — IDF-6 support exists only on esp_matter's unreleased `main` branch (their "v1.7, ongoing" track), not as a numbered component. Any consumer (including `esp-swift-matter/test-app`) that lists `SwiftMatter` in `REQUIRES` triggers the manager to fetch esp_matter and its tree into `managed_components/`. `MatterDevice.run()` only succeeds when the host project enables BT, OpenThread, custom partition table, MBEDTLS_HKDF_C, etc. The test-app intentionally does **not** call `MatterDevice.run()`; it lists `SwiftMatter` as a REQUIRES dependency only, to validate that the component links cleanly.
