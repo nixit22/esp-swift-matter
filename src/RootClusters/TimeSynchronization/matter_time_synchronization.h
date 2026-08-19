@@ -33,51 +33,41 @@ extern "C" {
 #endif
 
 /** C wrapper for esp_matter::cluster::time_synchronization::create on the root endpoint.
- *  Uses the default (null) delegate — falls back to connectedhomeip's DefaultTimeSyncDelegate,
- *  which enables the Trusted-Time-Source client feature automatically. Also advertises the
- *  TimeZone (TZ) feature, so a commissioner writes its own known local timezone into the
- *  device during commissioning.
+ *  Uses connectedhomeip's stock DefaultTimeSyncDelegate unmodified — its
+ *  UpdateTimeFromPlatformSource() already succeeds as soon as the system clock is set (by
+ *  esp_matter_time_synchronization_start_sntp() or any other means), which is the standard
+ *  esp_matter/connectedhomeip pattern: SNTP runs independently of Matter, and the delegate
+ *  just notices. Also enables the Trusted-Time-Source client feature, so the cluster responds
+ *  correctly if/when a controller sends SetTrustedTimeSource — but nothing here proactively
+ *  retries or nudges that path; see matter-time-test/TIME-SYNC.md for why that turned out not
+ *  to be worth chasing (the controller-resync gap it works around is a known, widely-reported
+ *  ecosystem issue that's being fixed in controllers, e.g. matter.js's TimeSyncManager and a
+ *  Home Assistant custom component — not something devices are expected to work around).
+ *
+ *  Does not advertise the TimeZone (TZ) feature or expose local/wall-clock time — that's a
+ *  Matter-controller-supplied UTC offset for display purposes only, unrelated to a device's
+ *  actual geographic location. If you need real local solar time (e.g. sunrise/sunset), use
+ *  plain UTC (time()/gettimeofday(), synced via esp_matter_time_synchronization_start_sntp())
+ *  plus the device's own known latitude/longitude — Matter has no cluster for the latter.
  */
 SWIFT_NAME("esp_matter_enable_time_synchronization()")
 esp_matter_endpoint_t *
 esp_matter_enable_time_synchronization(void);
 
-/** Current local wall-clock time as Unix epoch seconds (UTC time + the TimeZone/DSTOffset
- *  the commissioner wrote via the TZ feature). Returns INT64_MIN if no controller has
- *  written a timezone yet (or the clock itself isn't synced).
- */
-SWIFT_NAME("esp_matter_time_synchronization_get_local_unix_time()")
-int64_t
-esp_matter_time_synchronization_get_local_unix_time(void);
-
-/** Re-attempts the Time Synchronization cluster's time fetch (platform source, then trusted
- *  time source node, then NTP fallback — see TimeSynchronizationServer::AttemptToGetTime).
+/** Starts SNTP against `host`, independent of the Matter TimeSynchronization cluster — this
+ *  is the standard esp_matter/connectedhomeip pattern (see e.g. connectedhomeip's
+ *  examples/platform/esp32/time/TimeSync.cpp), not something layered on top of the cluster.
+ *  Runs indefinitely, re-syncing periodically and calling settimeofday() on each sync.
  *
- *  connectedhomeip only calls AttemptToGetTime() once, on the kServerReady boot event (plus
- *  once more if a controller resends SetTrustedTimeSource). If that single attempt's CASE
- *  session to the trusted node times out — e.g. the Thread mesh hasn't settled yet right after
- *  a reboot — there is no built-in retry, and the device is stuck unsynced until next reboot.
- *  Callers should poll this periodically (e.g. from a status-logging loop) while unsynced.
+ *  `host` must be IPv6-reachable (e.g. "time.google.com", "2.pool.ntp.org") on Thread-only
+ *  networks — many pool.ntp.org entries are IPv4-only and fail silently.
+ *
+ *  Call once, any time — does not require esp_matter_enable_time_synchronization() or
+ *  esp_matter_start() to have run first.
  */
-SWIFT_NAME("esp_matter_time_synchronization_retry_sync()")
+SWIFT_NAME("esp_matter_time_synchronization_start_sntp(host:)")
 void
-esp_matter_time_synchronization_retry_sync(void);
-
-/** Seeds the cluster's DefaultNTP attribute with `host` if — and only if — nothing has been
- *  stored yet (e.g. by a controller's own SetDefaultNTP command). This exists because
- *  TimeSynchronizationServer::AttemptToGetFallbackNTPTimeFromDelegate() bails out before ever
- *  calling the delegate's NTP fallback if no DefaultNTP value is stored — and no controller
- *  observed in practice (Apple Home, Home Assistant) ever sends SetDefaultNTP. Without this
- *  call, the NTP fallback delegate is never reached at all, regardless of what it implements.
- *
- *  `host` must be IPv6-reachable (e.g. "time.google.com", "2.pool.ntp.org") — Thread is an
- *  IPv6-only transport, and many pool.ntp.org entries are IPv4-only and fail silently.
- *
- *  Call after esp_matter_enable_time_synchronization() and before esp_matter::start().
- */
-SWIFT_NAME("esp_matter_time_synchronization_set_default_ntp(host:)")
-void
-esp_matter_time_synchronization_set_default_ntp(const char *host);
+esp_matter_time_synchronization_start_sntp(const char *host);
 
 #ifdef __cplusplus
 }

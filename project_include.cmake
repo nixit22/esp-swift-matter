@@ -1,7 +1,9 @@
 # This file is automatically included by ESP-IDF before processing components.
-# It applies a patch to the registry-managed esp_matter component so that its
-# compile options are gated by COMPILE_LANGUAGE:C,CXX (Swift sources reject the
-# -Wno-error=... and -std=gnu++17 flags otherwise).
+# It applies esp_matter.patch to the registry-managed esp_matter component:
+# gates its compile options behind COMPILE_LANGUAGE:C,CXX (Swift sources reject
+# the -Wno-error=... and -std=gnu++17 flags otherwise), and adds a few small
+# accessor functions our C facade needs but esp_matter doesn't expose publicly
+# (see esp_matter.patch's own header comment for the full list).
 #
 # The patch is inert when the managed component is absent.  When esp_matter
 # is fetched into managed_components/ by the IDF Component Manager, the patch
