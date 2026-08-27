@@ -66,19 +66,60 @@ public final class MatterDevice {
     }
 
     /// Matter stack events delivered to the ``run(onEvent:)`` callback.
-    public enum Event: UInt8 {
+    public enum Event {
+        /// One direction (IPv4 or IPv6) of an ``internetConnectivityChange(ipv4:ipv6:)`` transition.
+        public enum ConnectivityChange {
+            case noChange
+            case established
+            case lost
+
+            init(_ raw: _esp_matter_connectivity_change_t) {
+                switch raw {
+                case _ESP_MATTER_CONNECTIVITY_ESTABLISHED: self = .established
+                case _ESP_MATTER_CONNECTIVITY_LOST: self = .lost
+                default: self = .noChange
+                }
+            }
+        }
+
         /// Commissioning via the controller app succeeded; the device now has a fabric.
-        case commissioningComplete       = 0
+        case commissioningComplete(nodeId: UInt64, fabricIndex: UInt8)
         /// A BLE pairing session was opened (QR code scanned).
-        case commissioningSessionStarted = 1
+        case commissioningSessionStarted
         /// BLE pairing session closed — either succeeded or timed out.
-        case commissioningSessionStopped = 2
+        case commissioningSessionStopped
         /// Commissioning window is open; the QR code / manual code is active.
-        case commissioningWindowOpened   = 3
+        case commissioningWindowOpened
         /// Commissioning window closed.
-        case commissioningWindowClosed   = 4
+        case commissioningWindowClosed
+        /// IPv4/IPv6 Internet connectivity transitioned (e.g. once the Thread mesh has
+        /// joined and the border router provides a default IPv6 route — the earliest
+        /// point at which SNTP/DNS queries can succeed over that address family).
+        case internetConnectivityChange(ipv4: ConnectivityChange, ipv6: ConnectivityChange)
         /// Any CHIP event type not mapped to the cases above.
-        case unknown                     = 0xFF
+        case unknown
+
+        init(_ raw: _esp_matter_device_event_t) {
+            switch raw.type {
+            case _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_COMPLETE:
+                self = .commissioningComplete(
+                    nodeId: raw.commissioningCompleteNodeId, fabricIndex: raw.commissioningCompleteFabricIndex)
+            case _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_SESSION_STARTED:
+                self = .commissioningSessionStarted
+            case _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_SESSION_STOPPED:
+                self = .commissioningSessionStopped
+            case _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_OPENED:
+                self = .commissioningWindowOpened
+            case _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_CLOSED:
+                self = .commissioningWindowClosed
+            case _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE:
+                self = .internetConnectivityChange(
+                    ipv4: ConnectivityChange(raw.internetConnectivityChangeIPv4),
+                    ipv6: ConnectivityChange(raw.internetConnectivityChangeIPv6))
+            default:
+                self = .unknown
+            }
+        }
     }
 
     private var endpoints: [UInt16: Endpoint] = [:]
@@ -145,7 +186,7 @@ public final class MatterDevice {
                     callback: { event, arg in
                         guard let arg else { return }
                         let matter = Unmanaged<MatterDevice>.fromOpaque(arg).takeUnretainedValue()
-                        matter.onEvent?(Event(rawValue: event) ?? .unknown)
+                        matter.onEvent?(Event(event))
                     },
                     callbackArg: Unmanaged.passUnretained(self).toOpaque()
                 )

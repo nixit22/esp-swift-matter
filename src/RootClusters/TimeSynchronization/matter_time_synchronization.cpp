@@ -24,48 +24,32 @@
 #include <esp_matter.h>
 #include <app/clusters/time-synchronization-server/DefaultTimeSyncDelegate.h>
 
-#include <esp_netif_sntp.h>
-#include <esp_log.h>
-
-#include <cstring>
-#include <algorithm>
-
 namespace {
 
-constexpr char kTag[] = "MatterTimeSync";
-constexpr size_t kMaxHostSize = 128;
-
-chip::app::Clusters::TimeSynchronization::DefaultTimeSyncDelegate gDelegate;
-
-char gSntpHost[kMaxHostSize] = {};
-
-// Runs on lwIP's SNTP task, not the CHIP event-loop thread.
-void SntpSyncCallback(struct timeval *)
+class EspMatterTimeSyncDelegate : public chip::app::Clusters::TimeSynchronization::DefaultTimeSyncDelegate
 {
-    ESP_LOGI(kTag, "SNTP synchronized ('%s')", gSntpHost);
-}
+public:
+    esp_matter_time_sync_callback_t onTimeSync = nullptr;
+
+    void UTCTimeAvailabilityChanged(uint64_t time) override
+    {
+        if (onTimeSync != nullptr)
+        {
+            onTimeSync();
+        }
+    }
+};
+
+EspMatterTimeSyncDelegate gDelegate;
 
 } // namespace
 
-extern "C" esp_matter_endpoint_t *esp_matter_enable_time_synchronization(void)
+extern "C" esp_matter_endpoint_t *esp_matter_enable_time_synchronization(esp_matter_time_sync_callback_t on_time_sync)
 {
+    gDelegate.onTimeSync = on_time_sync;
     esp_matter::endpoint_t *root = esp_matter::endpoint::get(0);
     esp_matter::cluster::time_synchronization::config_t cfg;
     cfg.delegate = &gDelegate;
     esp_matter::cluster::time_synchronization::create(root, &cfg, esp_matter::CLUSTER_FLAG_SERVER);
     return root;
-}
-
-extern "C" void esp_matter_time_synchronization_start_sntp(const char *host)
-{
-    size_t len = std::min(strlen(host), sizeof(gSntpHost) - 1);
-    memcpy(gSntpHost, host, len);
-    gSntpHost[len] = '\0';
-
-    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(gSntpHost);
-    config.sync_cb = SntpSyncCallback;
-    esp_err_t err = esp_netif_sntp_init(&config);
-    if (err != ESP_OK) {
-        ESP_LOGE(kTag, "esp_netif_sntp_init('%s') failed: %s", gSntpHost, esp_err_to_name(err));
-    }
 }
