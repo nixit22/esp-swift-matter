@@ -21,31 +21,27 @@
 import ESP_Matter
 
 extension MatterDevice {
+    private static var onTimeSyncHandler: (() -> Void)?
+
     /// Enables the Time Synchronization cluster (0x0038) on the root endpoint.
     ///
     /// Uses connectedhomeip's default delegate and Trusted-Time-Source client feature —
     /// once commissioned, if the controller registers itself (or another node) as a Trusted
     /// Time Source, the device fetches UTC time over a CASE session and calls
-    /// `settimeofday()` internally. Also picks up whatever `startNTPSync(host:)` (or any
-    /// other means) already put in the system clock — no custom delegate needed.
+    /// `settimeofday()` internally. Also picks up whatever set the system clock by any other
+    /// means (e.g. the standalone `esp-swift-sntp` component) — no custom delegate needed.
     ///
     /// Call after `MatterDevice()` init and before `run()`.
-    public func enableTimeSynchronization() {
-        _ = esp_matter_enable_time_synchronization()
-    }
-
-    /// Starts SNTP against `host`, independent of the Time Synchronization cluster — this is
-    /// the standard esp_matter/connectedhomeip pattern (see e.g. connectedhomeip's
-    /// `examples/platform/esp32/time/TimeSync.cpp`), not something layered on top of the
-    /// cluster. Runs indefinitely, re-syncing periodically and calling `settimeofday()` on
-    /// each sync.
     ///
-    /// `host` must be IPv6-reachable (e.g. `"time.google.com"`, `"2.pool.ntp.org"`) on
-    /// Thread-only networks — many `pool.ntp.org` entries are IPv4-only and fail silently.
-    ///
-    /// Call once, any time — does not require `enableTimeSynchronization()` or `run()` to
-    /// have been called first.
-    public func startNTPSync(host: String) {
-        host.withCString { esp_matter_time_synchronization_start_sntp(host: $0) }
+    /// - Parameter onTimeSync: Called whenever the cluster's `UTCTime` attribute is set — the
+    ///   first successful sync (Trusted-Time-Source fetch or a controller's `SetUTCTime`
+    ///   command) and any later correction. The system clock is already updated by the time
+    ///   this fires, so read `gettimeofday()`/`time()` yourself rather than expecting a value
+    ///   here. Only fires for time obtained through this cluster — independent clock sync (e.g.
+    ///   `esp-swift-sntp`) doesn't route through it. Registering a new `MatterDevice` replaces
+    ///   any previous handler (matches the one-`MatterDevice`-per-device model).
+    public func enableTimeSynchronization(onTimeSync: (() -> Void)? = nil) {
+        Self.onTimeSyncHandler = onTimeSync
+        _ = esp_matter_enable_time_synchronization(onTimeSync: { MatterDevice.onTimeSyncHandler?() })
     }
 }

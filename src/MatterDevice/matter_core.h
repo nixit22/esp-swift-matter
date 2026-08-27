@@ -234,18 +234,55 @@ SWIFT_NAME("esp_matter_endpoint_set_priv_data(endpointId:privData:)")
 esp_err_t
 esp_matter_endpoint_set_priv_data(uint16_t endpoint_id, void *priv_data);
 
-/** Event codes passed to esp_matter_event_cb_t.
- *  These are a simplified mapping of ChipDeviceEvent.Type values; the
- *  translation from CHIP SDK types to these codes happens in matter_core.cpp.
- *
- *  0  commissioningComplete       — commissioning via the commissioner app succeeded
- *  1  commissioningSessionStarted — BLE pairing session opened
- *  2  commissioningSessionStopped — BLE pairing session closed (succeeded or timed-out)
- *  3  commissioningWindowOpened   — commissioning window is open (QR code is active)
- *  4  commissioningWindowClosed   — commissioning window closed
- *  0xFF  unknown                  — any other CHIP event type
+/** Event type discriminant for _esp_matter_device_event_t.
+ *  A curated subset of ChipDeviceEvent.Type values; the translation from CHIP
+ *  SDK types happens in matter_core.cpp's translate_event().
  */
-typedef void (*esp_matter_event_cb_t)(uint8_t event, void *arg);
+typedef enum
+{
+    /** Commissioning via the commissioner app succeeded. */
+    _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_COMPLETE = 0,
+    /** BLE pairing session opened. */
+    _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_SESSION_STARTED = 1,
+    /** BLE pairing session closed (succeeded or timed-out). */
+    _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_SESSION_STOPPED = 2,
+    /** Commissioning window is open (QR code is active). */
+    _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_OPENED = 3,
+    /** Commissioning window closed. */
+    _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_CLOSED = 4,
+    /** IPv4/IPv6 Internet connectivity transitioned; see
+     *  internetConnectivityChangeIPv4/IPv6 for the direction. */
+    _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE = 5,
+    /** Any other CHIP event type. */
+    _ESP_MATTER_DEVICE_EVENT_UNKNOWN = 0xFF,
+} _esp_matter_device_event_type_t;
+
+/** Mirrors chip::DeviceLayer::ConnectivityChange. */
+typedef enum
+{
+    _ESP_MATTER_CONNECTIVITY_NO_CHANGE = 0,
+    _ESP_MATTER_CONNECTIVITY_ESTABLISHED = 1,
+    _ESP_MATTER_CONNECTIVITY_LOST = -1,
+} _esp_matter_connectivity_change_t;
+
+/** Event payload passed to esp_matter_event_cb_t.
+ *
+ *  Only the fields relevant to `type` are populated; the rest are zeroed.
+ *  Mirrors a curated subset of ChipDeviceEvent's tagged union (CHIPDeviceEvent.h) —
+ *  translation from the CHIP SDK type happens in matter_core.cpp's translate_event().
+ */
+typedef struct
+{
+    _esp_matter_device_event_type_t type;
+    /** Valid when type == _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_COMPLETE. */
+    uint64_t commissioningCompleteNodeId;
+    uint8_t commissioningCompleteFabricIndex;
+    /** Valid when type == _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE. */
+    _esp_matter_connectivity_change_t internetConnectivityChangeIPv4;
+    _esp_matter_connectivity_change_t internetConnectivityChangeIPv6;
+} _esp_matter_device_event_t;
+
+typedef void (*esp_matter_event_cb_t)(_esp_matter_device_event_t event, void *arg);
 
 /** Start the Matter stack. callback may be NULL.
  *  Blocks until CHIP init completes. Call after all endpoints have been created.

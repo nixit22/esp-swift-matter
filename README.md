@@ -15,7 +15,7 @@ let hum  = HumiditySensorEndpoint(matter, min: 0, max: 100)
 let pres = PressureSensorEndpoint(matter, min: 300, max: 1100)
 matter.enableTimeSynchronization()
 matter.run { event in
-    if event == .commissioningComplete { /* commissioned! */ }
+    if case .commissioningComplete = event { /* commissioned! */ }
 }
 temp.set(23.5)
 hum.set(65.0)

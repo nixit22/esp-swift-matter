@@ -32,42 +32,38 @@
 extern "C" {
 #endif
 
+/** Invoked whenever the Time Synchronization cluster's UTCTime attribute is set — the first
+ *  successful sync (Trusted-Time-Source fetch, or a controller's SetUTCTime command) and any
+ *  later correction. By the time this fires, System::SystemClock().SetClock_RealTime() has
+ *  already run, so the callback carries no time value — read gettimeofday()/time() directly.
+ *  (The cluster's internal value is Chip-epoch microseconds, not Unix epoch, so there's nothing
+ *  useful to hand back without duplicating connectedhomeip's private epoch-conversion helper.)
+ */
+typedef void (*esp_matter_time_sync_callback_t)(void);
+
 /** C wrapper for esp_matter::cluster::time_synchronization::create on the root endpoint.
- *  Uses connectedhomeip's stock DefaultTimeSyncDelegate unmodified — its
- *  UpdateTimeFromPlatformSource() already succeeds as soon as the system clock is set (by
- *  esp_matter_time_synchronization_start_sntp() or any other means), which is the standard
- *  esp_matter/connectedhomeip pattern: SNTP runs independently of Matter, and the delegate
- *  just notices. Also enables the Trusted-Time-Source client feature, so the cluster responds
- *  correctly if/when a controller sends SetTrustedTimeSource — but nothing here proactively
- *  retries or nudges that path; see matter-time-test/TIME-SYNC.md for why that turned out not
- *  to be worth chasing (the controller-resync gap it works around is a known, widely-reported
- *  ecosystem issue that's being fixed in controllers, e.g. matter.js's TimeSyncManager and a
- *  Home Assistant custom component — not something devices are expected to work around).
+ *  Uses connectedhomeip's stock DefaultTimeSyncDelegate, subclassed only to forward
+ *  UTCTimeAvailabilityChanged() to on_time_sync (pass NULL if you don't need the notification).
+ *  Otherwise unmodified — its UpdateTimeFromPlatformSource() already succeeds as soon as the
+ *  system clock is set (by any means — e.g. the standalone esp-swift-sntp component, or the
+ *  Trusted-Time-Source client feature below), which is the standard esp_matter/connectedhomeip
+ *  pattern: clock sync runs independently of Matter, and the delegate just notices. Also enables
+ *  the Trusted-Time-Source client feature, so the cluster responds correctly if/when a controller
+ *  sends SetTrustedTimeSource — but nothing here proactively retries or nudges that path; see
+ *  matter-time-test/TIME-SYNC.md for why that turned out not to be worth chasing (the
+ *  controller-resync gap it works around is a known, widely-reported ecosystem issue that's
+ *  being fixed in controllers, e.g. matter.js's TimeSyncManager and a Home Assistant custom
+ *  component — not something devices are expected to work around).
  *
  *  Does not advertise the TimeZone (TZ) feature or expose local/wall-clock time — that's a
  *  Matter-controller-supplied UTC offset for display purposes only, unrelated to a device's
  *  actual geographic location. If you need real local solar time (e.g. sunrise/sunset), use
- *  plain UTC (time()/gettimeofday(), synced via esp_matter_time_synchronization_start_sntp())
- *  plus the device's own known latitude/longitude — Matter has no cluster for the latter.
+ *  plain UTC (time()/gettimeofday(), synced independently — e.g. via esp-swift-sntp) plus the
+ *  device's own known latitude/longitude — Matter has no cluster for the latter.
  */
-SWIFT_NAME("esp_matter_enable_time_synchronization()")
+SWIFT_NAME("esp_matter_enable_time_synchronization(onTimeSync:)")
 esp_matter_endpoint_t *
-esp_matter_enable_time_synchronization(void);
-
-/** Starts SNTP against `host`, independent of the Matter TimeSynchronization cluster — this
- *  is the standard esp_matter/connectedhomeip pattern (see e.g. connectedhomeip's
- *  examples/platform/esp32/time/TimeSync.cpp), not something layered on top of the cluster.
- *  Runs indefinitely, re-syncing periodically and calling settimeofday() on each sync.
- *
- *  `host` must be IPv6-reachable (e.g. "time.google.com", "2.pool.ntp.org") on Thread-only
- *  networks — many pool.ntp.org entries are IPv4-only and fail silently.
- *
- *  Call once, any time — does not require esp_matter_enable_time_synchronization() or
- *  esp_matter_start() to have run first.
- */
-SWIFT_NAME("esp_matter_time_synchronization_start_sntp(host:)")
-void
-esp_matter_time_synchronization_start_sntp(const char *host);
+esp_matter_enable_time_synchronization(esp_matter_time_sync_callback_t on_time_sync);
 
 #ifdef __cplusplus
 }

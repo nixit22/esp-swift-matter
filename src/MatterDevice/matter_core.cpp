@@ -102,15 +102,45 @@ struct event_callback_context
     void *arg;
 };
 
-static uint8_t translate_event(uint16_t type)
+static _esp_matter_device_event_t translate_event(const ChipDeviceEvent *event)
 {
     using namespace chip::DeviceLayer::DeviceEventType;
-    if (type == kCommissioningComplete)        return 0;
-    if (type == kCommissioningSessionStarted)  return 1;
-    if (type == kCommissioningSessionStopped)  return 2;
-    if (type == kCommissioningWindowOpened)    return 3;
-    if (type == kCommissioningWindowClosed)    return 4;
-    return 0xFF;
+    _esp_matter_device_event_t out = {};
+    uint16_t type = event->Type;
+
+    if (type == kCommissioningComplete) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_COMPLETE;
+        out.commissioningCompleteNodeId = event->CommissioningComplete.nodeId;
+        out.commissioningCompleteFabricIndex = event->CommissioningComplete.fabricIndex;
+        return out;
+    }
+    if (type == kCommissioningSessionStarted) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_SESSION_STARTED;
+        return out;
+    }
+    if (type == kCommissioningSessionStopped) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_SESSION_STOPPED;
+        return out;
+    }
+    if (type == kCommissioningWindowOpened) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_OPENED;
+        return out;
+    }
+    if (type == kCommissioningWindowClosed) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_CLOSED;
+        return out;
+    }
+    if (type == kInternetConnectivityChange) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE;
+        out.internetConnectivityChangeIPv4 =
+            static_cast<_esp_matter_connectivity_change_t>(event->InternetConnectivityChange.IPv4);
+        out.internetConnectivityChangeIPv6 =
+            static_cast<_esp_matter_connectivity_change_t>(event->InternetConnectivityChange.IPv6);
+        return out;
+    }
+
+    out.type = _ESP_MATTER_DEVICE_EVENT_UNKNOWN;
+    return out;
 }
 
 extern "C" esp_err_t esp_matter_start(esp_matter_event_cb_t callback, void *callbackArg)
@@ -120,7 +150,7 @@ extern "C" esp_err_t esp_matter_start(esp_matter_event_cb_t callback, void *call
         return esp_matter::start(
             [](const ChipDeviceEvent *event, intptr_t arg) {
                 auto *ctx = reinterpret_cast<event_callback_context *>(arg);
-                ctx->callback(translate_event(event->Type), ctx->arg);
+                ctx->callback(translate_event(event), ctx->arg);
             },
             reinterpret_cast<intptr_t>(ctx));
     }

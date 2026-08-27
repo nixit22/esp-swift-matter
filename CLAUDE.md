@@ -38,7 +38,7 @@ let valve = WaterValveEndpoint(matter,
     onClose: { _ in /* close hardware */ valve.setCurrentState(.closed) })
 matter.enableTimeSynchronization()
 matter.run { event in
-    if event == .commissioningComplete { /* commissioned! */ }
+    if case .commissioningComplete = event { /* commissioned! */ }
 }
 temp.set(23.5)
 hum.set(65.0)
@@ -101,20 +101,19 @@ there is no `localDate()`-style API — deliberately. `TZ` is a controller-suppl
 offset (derived from phone locale / hub server tz), unrelated to a device's actual geographic
 location; it existed in an earlier version of this component but nothing here needs it. Callers
 wanting real local solar time (e.g. sunrise/sunset) should use plain UTC (`time()`/
-`gettimeofday()`, synced via `startNTPSync(host:)` below) together with the device's own known
-latitude/longitude — Matter has no cluster that provides the latter.
+`gettimeofday()`, synced independently — e.g. via the standalone `esp-swift-sntp` component)
+together with the device's own known latitude/longitude — Matter has no cluster that provides
+the latter.
 
-`MatterDevice.startNTPSync(host:)` runs SNTP independently of the Time Synchronization cluster —
-this is the standard esp_matter/connectedhomeip pattern (see connectedhomeip's
-`examples/platform/esp32/time/TimeSync.cpp`), not something layered on top of the cluster's
-delegate. `esp_matter_time_synchronization_start_sntp()` (`matter_time_synchronization.cpp`)
-calls `esp_netif_sntp_init()` with a `sync_cb` that calls `settimeofday()` (via `esp_netif_sntp`'s
-own lwIP client) — no interaction with the Matter cluster at all, and none needed:
+Clock sync running independently of the Time Synchronization cluster (e.g. via `esp-swift-sntp`)
+needs no interaction with the Matter cluster at all, and none is needed:
 `DefaultTimeSyncDelegate::UpdateTimeFromPlatformSource()` just checks whether the system clock is
 already set (`System::SystemClock().GetClock_RealTime()`) and succeeds if so, so *if and when*
-`AttemptToGetTime()` next runs it picks up whatever `startNTPSync` already set. Call once, any
-time — doesn't require `enableTimeSynchronization()` or `run()` first, since `esp_netif_sntp_init()`
-never touches the CHIP stack.
+`AttemptToGetTime()` next runs it picks up whatever already set the clock. This component used to
+ship its own SNTP entry point (`MatterDevice.startNTPSync(host:)`, backed by
+`esp_matter_time_synchronization_start_sntp()`) for exactly this — it was removed once
+`esp-swift-sntp` existed as a standalone component so this one wouldn't carry a second, redundant
+SNTP implementation.
 
 **No proactive retry of the cluster's own time fetch, on purpose.** connectedhomeip only calls
 its internal `AttemptToGetTime()` once, on boot (`kServerReady`) — plus again whenever a
