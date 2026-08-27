@@ -19,6 +19,9 @@
 // SOFTWARE.
 
 import ESP_Matter
+import Platform
+
+private let log = Logger(tag: "Matter.TimeSync")
 
 extension MatterDevice {
     private static var onTimeSyncHandler: (() -> Void)?
@@ -42,6 +45,10 @@ extension MatterDevice {
     ///   any previous handler (matches the one-`MatterDevice`-per-device model).
     public func enableTimeSynchronization(onTimeSync: (() -> Void)? = nil) {
         Self.onTimeSyncHandler = onTimeSync
-        _ = esp_matter_enable_time_synchronization(onTimeSync: { MatterDevice.onTimeSyncHandler?() })
+        let root = esp_matter_enable_time_synchronization(onTimeSync: { MatterDevice.onTimeSyncHandler?() })
+        if root == nil {
+            log.e("enableTimeSynchronization() called before MatterDevice() init — root endpoint doesn't exist")
+            abort()
+        }
     }
 }

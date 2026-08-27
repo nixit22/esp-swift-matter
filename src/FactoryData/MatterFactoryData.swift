@@ -55,11 +55,18 @@ public enum MatterFactoryData {
     /// Never throws — a factory-data write failure on an already-provisioned device
     /// must never block boot; failures are logged and skipped.
     public static func initialize(serialNumber: String) {
-        guard let handle = try? NVS(namespace: namespace) else { return }
+        guard let handle = try? NVS(namespace: namespace) else {
+            log.e("Failed to open \(namespace) namespace")
+            return
+        }
 
-        if (try? handle.setStringIfMissing("serial-num", serialNumber)) ?? false {
-            try? handle.commit()
-            log.i("chip-factory initialized (serial=\(serialNumber))")
+        do {
+            if try handle.setStringIfMissing("serial-num", serialNumber) {
+                try handle.commit()
+                log.i("chip-factory initialized (serial=\(serialNumber))")
+            }
+        } catch {
+            log.e("Failed to write serial-num to \(namespace): \(error.name)")
         }
     }
 
