@@ -41,7 +41,7 @@ idf_component_register(
         src/Endpoints/ClosureEndpoint/ClosureEndpoint.swift
         src/Endpoints/ModeSelectEndpoint/ModeSelectEndpoint.swift
         src/Endpoints/PowerSourceEndpoint/PowerSourceEndpoint.swift
-    PRIV_INCLUDE_DIRS
+    INCLUDE_DIRS
         src/MatterDevice
         src/RootClusters/TimeSynchronization
         src/Endpoints/TemperatureSensorEndpoint
