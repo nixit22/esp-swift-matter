@@ -75,6 +75,10 @@ Battery feature). `set(percent:voltageMv:)` writes BatPercentRemaining (scaled �
 half-percent range) and BatVoltage (mV); pass `nil` for either to set the Matter null sentinel.
 `set(_:)` is non-mutating, so the endpoint can be stored as `let`.
 
+`MatterDevice.isCommissioned` wraps `esp_matter_is_commissioned()` (`matter_core.h/cpp`), which reads
+`chip::Server::GetInstance().GetFabricTable().FabricCount() > 0` under a `ScopedChipStackLock`. Only
+call after `run()` returns — `run()` itself uses this to decide whether to print onboarding codes.
+
 `MatterDevice.factoryReset()` wraps `esp_matter::factory_reset()` (`esp_matter_factory_reset()` in
 `matter_core.h/cpp`) — erases Matter/Thread NVS state and reboots. Only call after `run()` returns:
 `chip::Server::ScheduleFactoryReset()` requires the CHIP event loop to already be running, so

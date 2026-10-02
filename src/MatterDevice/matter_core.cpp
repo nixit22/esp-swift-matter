@@ -131,11 +131,17 @@ static _esp_matter_device_event_t translate_event(const ChipDeviceEvent *event)
         return out;
     }
     if (type == kInternetConnectivityChange) {
-        out.type = _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE;
-        out.internetConnectivityChangeIPv4 =
+        out.type = _ESP_MATTER_DEVICE_EVENT_WIFI_CONNECTIVITY_CHANGE;
+        out.wifiConnectivityChangeIPv4 =
             static_cast<_esp_matter_connectivity_change_t>(event->InternetConnectivityChange.IPv4);
-        out.internetConnectivityChangeIPv6 =
+        out.wifiConnectivityChangeIPv6 =
             static_cast<_esp_matter_connectivity_change_t>(event->InternetConnectivityChange.IPv6);
+        return out;
+    }
+    if (type == kThreadConnectivityChange) {
+        out.type = _ESP_MATTER_DEVICE_EVENT_THREAD_CONNECTIVITY_CHANGE;
+        out.threadConnectivityChange =
+            static_cast<_esp_matter_connectivity_change_t>(event->ThreadConnectivityChange.Result);
         return out;
     }
 

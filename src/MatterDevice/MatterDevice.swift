@@ -92,10 +92,23 @@ public final class MatterDevice {
         case commissioningWindowOpened
         /// Commissioning window closed.
         case commissioningWindowClosed
-        /// IPv4/IPv6 Internet connectivity transitioned (e.g. once the Thread mesh has
-        /// joined and the border router provides a default IPv6 route — the earliest
-        /// point at which SNTP/DNS queries can succeed over that address family).
-        case internetConnectivityChange(ipv4: ConnectivityChange, ipv6: ConnectivityChange)
+        /// IPv4/IPv6 WiFi station connectivity transitioned (e.g. once associated and the
+        /// station has a default route — the earliest point at which SNTP/DNS queries can
+        /// succeed over that address family).
+        ///
+        /// **WiFi-only** — connectedhomeip only posts this from `ConnectivityManagerImpl_WiFi`'s
+        /// `UpdateInternetConnectivityState()`, compiled out entirely when
+        /// `CHIP_DEVICE_CONFIG_ENABLE_WIFI` is off. On a Thread-only build (no WiFi station) this
+        /// case structurally never fires — verified against connectedhomeip's source, not just
+        /// unobserved in testing. Use ``threadConnectivityChange(_:)`` instead on Thread devices.
+        case wifiConnectivityChange(ipv4: ConnectivityChange, ipv6: ConnectivityChange)
+        /// The Thread interface attached to or detached from the mesh. This is the Thread
+        /// counterpart to ``wifiConnectivityChange(ipv4:ipv6:)`` — the signal to use on a
+        /// Thread-only build to know roughly when the network might be reachable (e.g. to gate
+        /// starting SNTP). `.established` means newly attached; it does not guarantee the border
+        /// router has already published a default IPv6 route, so a first network attempt right
+        /// after this fires can still fail — callers relying on it should still retry.
+        case threadConnectivityChange(ConnectivityChange)
         /// Any CHIP event type not mapped to the cases above.
         case unknown
 
@@ -112,10 +125,12 @@ public final class MatterDevice {
                 self = .commissioningWindowOpened
             case _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_CLOSED:
                 self = .commissioningWindowClosed
-            case _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE:
-                self = .internetConnectivityChange(
-                    ipv4: ConnectivityChange(raw.internetConnectivityChangeIPv4),
-                    ipv6: ConnectivityChange(raw.internetConnectivityChangeIPv6))
+            case _ESP_MATTER_DEVICE_EVENT_WIFI_CONNECTIVITY_CHANGE:
+                self = .wifiConnectivityChange(
+                    ipv4: ConnectivityChange(raw.wifiConnectivityChangeIPv4),
+                    ipv6: ConnectivityChange(raw.wifiConnectivityChangeIPv6))
+            case _ESP_MATTER_DEVICE_EVENT_THREAD_CONNECTIVITY_CHANGE:
+                self = .threadConnectivityChange(ConnectivityChange(raw.threadConnectivityChange))
             default:
                 self = .unknown
             }
@@ -194,9 +209,17 @@ public final class MatterDevice {
         } else {
             ESP_ERROR_CHECK(esp_matter_start(callback: nil, callbackArg: nil))
         }
-        if !esp_matter_is_commissioned() {
+        if !isCommissioned {
             esp_matter_print_onboarding_codes()
         }
+    }
+
+    /// Returns `true` if the device has at least one commissioned fabric.
+    ///
+    /// Only call after `run()` returns — reads `chip::Server`'s fabric table, which requires
+    /// the CHIP event loop to already be running.
+    public var isCommissioned: Bool {
+        esp_matter_is_commissioned()
     }
 
     /// Erases all Matter/Thread NVS state and reboots the device.
