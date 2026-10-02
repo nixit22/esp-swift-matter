@@ -250,9 +250,15 @@ typedef enum
     _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_OPENED = 3,
     /** Commissioning window closed. */
     _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_WINDOW_CLOSED = 4,
-    /** IPv4/IPv6 Internet connectivity transitioned; see
-     *  internetConnectivityChangeIPv4/IPv6 for the direction. */
-    _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE = 5,
+    /** IPv4/IPv6 WiFi station connectivity transitioned; see
+     *  wifiConnectivityChangeIPv4/IPv6 for the direction. */
+    _ESP_MATTER_DEVICE_EVENT_WIFI_CONNECTIVITY_CHANGE = 5,
+    /** Thread interface attached to or detached from the mesh; see
+     *  threadConnectivityChange for the direction. Unlike
+     *  _ESP_MATTER_DEVICE_EVENT_WIFI_CONNECTIVITY_CHANGE (WiFi-only — never
+     *  fires when CHIP_DEVICE_CONFIG_ENABLE_WIFI is off), this is the correct
+     *  "network is probably reachable" signal on a Thread-only build. */
+    _ESP_MATTER_DEVICE_EVENT_THREAD_CONNECTIVITY_CHANGE = 6,
     /** Any other CHIP event type. */
     _ESP_MATTER_DEVICE_EVENT_UNKNOWN = 0xFF,
 } _esp_matter_device_event_type_t;
@@ -277,9 +283,11 @@ typedef struct
     /** Valid when type == _ESP_MATTER_DEVICE_EVENT_COMMISSIONING_COMPLETE. */
     uint64_t commissioningCompleteNodeId;
     uint8_t commissioningCompleteFabricIndex;
-    /** Valid when type == _ESP_MATTER_DEVICE_EVENT_INTERNET_CONNECTIVITY_CHANGE. */
-    _esp_matter_connectivity_change_t internetConnectivityChangeIPv4;
-    _esp_matter_connectivity_change_t internetConnectivityChangeIPv6;
+    /** Valid when type == _ESP_MATTER_DEVICE_EVENT_WIFI_CONNECTIVITY_CHANGE. */
+    _esp_matter_connectivity_change_t wifiConnectivityChangeIPv4;
+    _esp_matter_connectivity_change_t wifiConnectivityChangeIPv6;
+    /** Valid when type == _ESP_MATTER_DEVICE_EVENT_THREAD_CONNECTIVITY_CHANGE. */
+    _esp_matter_connectivity_change_t threadConnectivityChange;
 } _esp_matter_device_event_t;
 
 typedef void (*esp_matter_event_cb_t)(_esp_matter_device_event_t event, void *arg);
