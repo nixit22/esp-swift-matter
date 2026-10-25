@@ -12,7 +12,7 @@ app's `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/nixit22/esp-swift-matter.git", branch: "SPM"),
+    .package(url: "https://github.com/nixit22/esp-swift-matter.git", from: "0.1.0"),
 ],
 targets: [
     .target(name: "App", dependencies: [.product(name: "Matter", package: "esp-swift-matter")]),
