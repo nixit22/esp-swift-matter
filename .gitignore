@@ -6,3 +6,5 @@ test-app/sdkconfig.old
 test-app/dependencies.lock
 test-app/.vscode/settings.json
 .claude/settings.local.json
+.build/
+test-app/Package.resolved

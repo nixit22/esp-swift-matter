@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-/* Umbrella header — imported by Swift via the ESP_Matter Clang module
- * (module.modulemap). Includes all per-cluster C facades. */
+/* Umbrella header of the CMatter target — SwiftPM generates its Clang module
+ * from it. Includes all per-cluster C facades. */
 
 #pragma once
 

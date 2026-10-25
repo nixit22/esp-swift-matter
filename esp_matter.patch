@@ -4,14 +4,15 @@
 # 1. CMakeLists.txt — gates esp_matter's component-level PUBLIC compile
 #    options on COMPILE_LANGUAGE:C,CXX so the Embedded Swift driver (which
 #    sees these flags via its Clang front-end) doesn't reject `-Wno-error=...`
-#    and `-std=gnu++17`.
+#    and `-std=gnu++17`. Historical: SwiftPM now builds the Swift code, not
+#    ESP-IDF's CMake, so this hunk is no longer needed (it is harmless).
 #
 # 2+3. components/esp_matter/.../closure_control/integration.{h,cpp} —
 #    esp_matter's own ClosureControl integration glue (not connectedhomeip's)
 #    has no way for a caller to (a) fetch the live cluster instance by
 #    endpoint, or (b) seed an initial OverallCurrentState before the cluster
 #    is constructed — both of which
-#    SwiftMatter/src/Endpoints/ClosureEndpoint/matter_closure.cpp needs.
+#    Sources/CMatter/matter_closure.cpp needs.
 #    Adds two small accessor functions alongside the existing
 #    MatterClosureControlSetDelegate(), matching the GetClusterInstance()/
 #    Set*() pattern esp_matter already uses for time_synchronization,

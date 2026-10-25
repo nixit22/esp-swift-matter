@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-import ESP_Matter
+import CMatter
 import Platform
 
 private let log = Logger(tag: "Matter")
