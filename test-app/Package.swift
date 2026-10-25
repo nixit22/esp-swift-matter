@@ -31,8 +31,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: ".."),
-        .package(url: "https://github.com/nixit22/esp-swift-platform.git", branch: "SPM"),
-        .package(url: "https://github.com/nixit22/esp-swift-nvs.git", branch: "SPM"),
+        .package(url: "https://github.com/nixit22/esp-swift-platform.git", from: "0.1.0"),
+        .package(url: "https://github.com/nixit22/esp-swift-nvs.git", from: "0.1.0"),
     ],
     targets: [
         .target(
