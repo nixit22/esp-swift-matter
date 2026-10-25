@@ -32,7 +32,7 @@ jobs:
   build-test-app:
     name: Build test-app
     runs-on: ubuntu-latest
-    container: espressif/idf:v5.5.4
+    container: espressif/idf:v6.0.2
 
     defaults:
       run:
