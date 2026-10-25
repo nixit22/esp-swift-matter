@@ -3,6 +3,6 @@ version: "0.1.0"
 description: "ESP-Matter bindings for Swift (IDF side of the SwiftPM package)"
 url: "https://github.com/nixit22/esp-swift-matter"
 dependencies:
-  idf: ">=5.5,<6"
+  idf: ">=6.0"
   espressif/esp_matter:
-    version: "1.6.0"
+    version: "1.6.1"

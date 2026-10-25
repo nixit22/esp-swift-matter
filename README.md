@@ -2,7 +2,7 @@
 
 Swift bindings for the ESP-Matter SDK — root node, sensor/valve/mode-select/power-source endpoints, and the Time Synchronization cluster. Swift module name: **`Matter`**.
 
-Depends on: `SwiftPlatform`, `SwiftNVS`, `SwiftSupport`, `espressif/esp_matter` (registry, pinned 1.6.0).
+Depends on: `SwiftPlatform`, `SwiftNVS`, `SwiftSupport`, `espressif/esp_matter` (registry, pinned 1.6.1).
 
 ## Adding it to a project
 

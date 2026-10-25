@@ -40,9 +40,9 @@ namespace DM  = chip::app::DataModel;
  * closure_control/integration.cpp) now correctly constructs the cluster once
  * MatterClosureControlSetDelegate() has registered a delegate for the endpoint.
  * No custom init callback, ClusterLogic/MatterContext construction, or
- * endpoint→delegate lookup table needed any more — esp_matter.patch (hunks 3+4)
- * adds GetClusterInstance()/MatterClosureControlSetInitialOverallCurrentState()
- * for the two things that glue still doesn't expose publicly. */
+ * endpoint→delegate lookup table needed any more — it also exposes
+ * GetClusterInstance()/MatterClosureControlSetInitialOverallCurrentState()
+ * for the two things this facade needs (esp_matter >= 1.6.1). */
 class SwiftClosureDelegate : public CC::ClosureControlClusterDelegate {
 public:
     closure_move_to_cb_t  moveToCallback  = nullptr;
