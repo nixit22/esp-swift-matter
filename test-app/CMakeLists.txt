@@ -23,10 +23,11 @@ cmake_minimum_required(VERSION 3.19)
 # Resolve the Swift packages before ESP-IDF scans the components: esp-swift-support
 # (swift_package()) and any package whose root CMakeLists.txt calls
 # idf_component_register() (for example esp-swift-matter's IDF side) are IDF
-# components inside SwiftPM checkouts. Any `swift` can resolve (run in this folder,
-# so that swiftly's `swift` uses its .swift-version); swift_package() picks the
-# Embedded Swift toolchain later.
-# SwiftPM works in <build>/swiftpm, the folder swift_package() builds in.
+# components inside SwiftPM checkouts. Only the resolve is here: esp-swift-support's
+# cmake/swiftpm_components.cmake (in the checkout it just made) adds those packages to
+# EXTRA_COMPONENT_DIRS. SwiftPM works in <build>/swiftpm, the folder swift_package()
+# builds in; any `swift` can resolve (run in this folder, so that swiftly's `swift` uses
+# its .swift-version), swift_package() picks the Embedded Swift toolchain later.
 find_program(SWIFT_PROGRAM swift REQUIRED)
 set(SWIFTPM_SCRATCH "${CMAKE_BINARY_DIR}/swiftpm")
 # ESP-IDF's PATH has its GCC/binutils toolchains (riscv32-esp-elf, esp32ulp-elf...,
@@ -41,27 +42,7 @@ execute_process(
         --package-path "${CMAKE_CURRENT_LIST_DIR}" --scratch-path "${SWIFTPM_SCRATCH}" resolve
     WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     COMMAND_ERROR_IS_FATAL ANY)
-execute_process(
-    COMMAND ${SWIFTPM_ENV} "${SWIFT_PROGRAM}" package
-        --package-path "${CMAKE_CURRENT_LIST_DIR}" --scratch-path "${SWIFTPM_SCRATCH}"
-        show-dependencies --format json
-    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-    OUTPUT_VARIABLE SWIFTPM_DEPENDENCIES
-    COMMAND_ERROR_IS_FATAL ANY)
-file(REAL_PATH "${CMAKE_CURRENT_LIST_DIR}" SWIFTPM_ROOT)
-string(REGEX MATCHALL "\"path\" *: *\"[^\"]+\"" SWIFTPM_PATHS "${SWIFTPM_DEPENDENCIES}")
-list(REMOVE_DUPLICATES SWIFTPM_PATHS)
-foreach(entry IN LISTS SWIFTPM_PATHS)
-    string(REGEX REPLACE "^\"path\" *: *\"(.*)\"$" "\\1" package_path "${entry}")
-    file(REAL_PATH "${package_path}" package_path)
-    # Not every CMakeLists.txt is an IDF component (swift-collections has its own).
-    if(NOT package_path STREQUAL SWIFTPM_ROOT AND EXISTS "${package_path}/CMakeLists.txt")
-        file(STRINGS "${package_path}/CMakeLists.txt" registers REGEX "^[ \t]*idf_component_register")
-        if(registers)
-            list(APPEND EXTRA_COMPONENT_DIRS "${package_path}")
-        endif()
-    endif()
-endforeach()
+include("${SWIFTPM_SCRATCH}/checkouts/esp-swift-support/cmake/swiftpm_components.cmake")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(esp_swift_matter_test_app)
