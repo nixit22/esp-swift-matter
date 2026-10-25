@@ -25,11 +25,11 @@ cmake_minimum_required(VERSION 3.19)
 # idf_component_register() (for example esp-swift-matter's IDF side) are IDF
 # components inside SwiftPM checkouts. Only the resolve is here: esp-swift-support's
 # cmake/swiftpm_components.cmake (in the checkout it just made) adds those packages to
-# EXTRA_COMPONENT_DIRS. SwiftPM works in <build>/swiftpm, the folder swift_package()
+# EXTRA_COMPONENT_DIRS. SwiftPM works in <build>/swift-build, the folder swift_package()
 # builds in; any `swift` can resolve (run in this folder, so that swiftly's `swift` uses
 # its .swift-version), swift_package() picks the Embedded Swift toolchain later.
 find_program(SWIFT_PROGRAM swift REQUIRED)
-set(SWIFTPM_SCRATCH "${CMAKE_BINARY_DIR}/swiftpm")
+set(SWIFTPM_SCRATCH "${CMAKE_BINARY_DIR}/swift-build")
 # ESP-IDF's PATH has its GCC/binutils toolchains (riscv32-esp-elf, esp32ulp-elf...,
 # with a plain `ld`), which SwiftPM would use to link the package manifest for the
 # host: take them out of PATH for SwiftPM.
