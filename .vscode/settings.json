@@ -1,0 +1,7 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/test-app",
+    "cmake.configureOnOpen": false,
+    "swift.autoGenerateLaunchConfigurations": false,
+    "swift.disableAutoResolve": true,
+    "swift.buildPath": "${workspaceFolder}/test-app/build/swift-build"
+}
