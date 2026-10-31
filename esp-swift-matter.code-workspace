@@ -7,5 +7,10 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"swift.buildPath": "${workspaceFolder:test-app}/build/swift-build",
+		"swift.disableAutoResolve": true,
+		"swift.autoGenerateLaunchConfigurations": false,
+		"cmake.configureOnOpen": false
+	}
 }

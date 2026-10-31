@@ -42,7 +42,25 @@ execute_process(
         --package-path "${CMAKE_CURRENT_LIST_DIR}" --scratch-path "${SWIFTPM_SCRATCH}" resolve
     WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     COMMAND_ERROR_IS_FATAL ANY)
-include("${SWIFTPM_SCRATCH}/checkouts/esp-swift-support/cmake/swiftpm_components.cmake")
+set(SWIFT_SUPPORT_DIR "${SWIFTPM_SCRATCH}/checkouts/esp-swift-support")
+if(NOT EXISTS "${SWIFT_SUPPORT_DIR}")
+    # `swift package edit esp-swift-support --path <dir>` replaces the checkout
+    # with <dir>: SwiftPM records it in workspace-state.json.
+    file(READ "${SWIFTPM_SCRATCH}/workspace-state.json" SWIFTPM_STATE)
+    string(JSON SWIFTPM_DEPS GET "${SWIFTPM_STATE}" object dependencies)
+    string(JSON SWIFTPM_DEP_COUNT LENGTH "${SWIFTPM_DEPS}")
+    math(EXPR SWIFTPM_DEP_LAST "${SWIFTPM_DEP_COUNT} - 1")
+    foreach(i RANGE ${SWIFTPM_DEP_LAST})
+        string(JSON id GET "${SWIFTPM_DEPS}" ${i} packageRef identity)
+        if(id STREQUAL "esp-swift-support")
+            string(JSON SWIFT_SUPPORT_DIR ERROR_VARIABLE err GET "${SWIFTPM_DEPS}" ${i} state path)
+        endif()
+    endforeach()
+endif()
+if(NOT EXISTS "${SWIFT_SUPPORT_DIR}/cmake/swiftpm_components.cmake")
+    message(FATAL_ERROR "esp-swift-support not found in ${SWIFTPM_SCRATCH}/checkouts or as an edited package")
+endif()
+include("${SWIFT_SUPPORT_DIR}/cmake/swiftpm_components.cmake")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(esp_swift_matter_test_app)
